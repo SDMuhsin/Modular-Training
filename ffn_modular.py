@@ -101,37 +101,60 @@ args = parser.parse_args()
 def main():
     
     set_seed(42)
+    save_dir = "./downloads"
 
+    config_path = os.path.join(save_dir, f"{args.task}_config")
+    tokenizer_path = os.path.join(save_dir, f"{args.task}_tokenizer")
+    model_path = os.path.join(save_dir, f"{args.task}_model")
+
+
+    if not os.path.exists(config_path):
+        config = AutoConfig.from_pretrained(
+            args.model_name,
+            num_labels=args.num_labels,
+            finetuning_task=args.task,
+            cache_dir=None,
+            revision='main',
+            token=None,
+            trust_remote_code=False,
+        )
+        config.save_pretrained(config_path)
+    else:
+        print("LOAD FROM SAVE")
+        config = AutoConfig.from_pretrained(config_path)
+
+    # Load or save tokenizer
+    if not os.path.exists(tokenizer_path):
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model_name,
+            cache_dir=None,
+            use_fast=True,
+            revision='main',
+            token=None,
+            trust_remote_code=False
+        )
+        tokenizer.save_pretrained(tokenizer_path)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+
+    # Load or save model
+    if not os.path.exists(model_path):
+        model = AutoModelForSequenceClassification.from_pretrained(
+            args.model_name,
+            from_tf=bool(".ckpt" in args.model_name),
+            config=config,
+            cache_dir=None,
+            revision='main',
+            token=None,
+            trust_remote_code=False,
+            ignore_mismatched_sizes=False,
+        )
+        model.save_pretrained(model_path)
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(model_path)
     # Configuration and model setup code remains unchanged
-    config = AutoConfig.from_pretrained( 
-        args.model_name,
-        num_labels=args.num_labels,
-        finetuning_task=args.task,
-        cache_dir=None,
-        revision='main',
-        token=None,
-        trust_remote_code=False,
-    )
-    
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model_name,
-        cache_dir=None,
-        use_fast=True,
-        revision='main',
-        token=None,
-        trust_remote_code=False
-    )
 
-    model = AutoModelForSequenceClassification.from_pretrained(
-        args.model_name,
-        from_tf=bool(".ckpt" in args.model_name),
-        config=config,
-        cache_dir=None,
-        revision='main',
-        token=None,
-        trust_remote_code=False,
-        ignore_mismatched_sizes=False,
-    )
+
 
     encoder_idx = int(args.encoder_idx)
     print(f"Encoder idx = {encoder_idx}")

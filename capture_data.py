@@ -970,7 +970,7 @@ def main():
             combined.update(metrics)
 
         trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", combined if task is not None and "mnli" in task else metrics)
+        #trainer.save_metrics("eval", combined if task is not None and "mnli" in task else metrics)
 
    
     #print(type(attention_hook.outputs))

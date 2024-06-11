@@ -15,4 +15,5 @@ pip install scipy==1.10.1
 cp ../bert_exp/glove-embeddings/ ./ -r
 cp ../low_rank_modules/ ./ -r
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-pip3 install dll
+pip3 install dill
+pip3 install datasets
