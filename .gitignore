@@ -4,3 +4,4 @@ tmp/*
 glove-embeddings/*
 downloads/*
 jiant
+run_sbatch.sh
