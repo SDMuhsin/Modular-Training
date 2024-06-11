@@ -17,12 +17,12 @@ task=${10}
 model_name="distilbert/distilbert-base-uncased" 
 #./dp_sa_pipeline.sh test 1 n y y y 2 y
 
-
+random_seed=42
 encoder_idx=0
 
 rm ./saves/"${task}_augmented_dataset.pkl"
 
-export model_name task epochs job_name aug_n do_capture
+export model_name task epochs job_name aug_n do_capture random_seed
 export CUDA_VISIBLE_DEVICES=1  # Set this once if it's constant, or handle dynamically within the parallel command if it varies.
 
 # Check if data capture should be performed
@@ -43,10 +43,11 @@ if [ "$do_capture" = "y" ]; then
       --job_name $job_name \
       --encoder_idx {} \
       --aug_n $aug_n \
+      --random_seed $random_seed \
       && echo "Data generated successfully for encoder {}"'
 fi
 
-export job_name epochs task encoder_compression
+export job_name epochs task encoder_compression random_seed
 
 if [ "$do_modular_train_sa" = "y" ] && [ "$do_modular_train_bl" = "y" ]; then
     echo "\n \n \n Beginning modular training of SA and BL modules"
@@ -57,8 +58,8 @@ if [ "$do_modular_train_sa" = "y" ] && [ "$do_modular_train_bl" = "y" ]; then
         unset CUDA_VISIBLE_DEVICES; \
         export encoder_idx={}; \
         parallel -j 2 -u ::: \
-            "echo \"Modular training for SA module, encoder $encoder_idx\"; python3 mha_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression" \
-            "echo \"Modular training for BL module, encoder $encoder_idx\"; python3 ffn_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression"'
+            "echo \"Modular training for SA module, encoder $encoder_idx\"; python3 mha_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed" \
+            "echo \"Modular training for BL module, encoder $encoder_idx\"; python3 ffn_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"'
 fi
 
 if [ "$do_run_glue" = "y" ];
@@ -83,7 +84,8 @@ then
 	  --job_name $job_name \
 	  --last_mod_trained_for $epochs \
 	  --encoder_modularity $modularity\
-	  --encoder_compression $encoder_compression 
+	  --encoder_compression $encoder_compression \
+	  --random_seed $random_seed
 fi
 
 

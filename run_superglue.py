@@ -231,6 +231,11 @@ def parse_args():
         "--last_mod_trained_for",
         type=int
     )
+    
+    parser.add_argument(
+        "--random_seed",
+        type=int
+    )
 
     args = parser.parse_args()
 
@@ -261,6 +266,7 @@ import nlpaug.augmenter.word as naw
 import nltk
 from nltk.corpus import stopwords
 import random
+import numpy as np
 
 # Ensure you have the stopwords dataset downloaded
 nltk.download('stopwords')
@@ -306,6 +312,12 @@ def main():
     config_path = os.path.join(save_dir, f"{args.task_name}_config")
     tokenizer_path = os.path.join(save_dir, f"{args.task_name}_tokenizer")
     model_path = os.path.join(save_dir, f"{args.task_name}_model")
+    random.seed(args.random_seed)
+    np.random.seed(args.random_seed)
+    torch.manual_seed(args.random_seed)
+    torch.cuda.manual_seed_all(args.random_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.

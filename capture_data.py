@@ -165,6 +165,7 @@ class DataTrainingArguments:
     #encoder_idx: int = field(default = 0, metadata={"help":"Which encoder index do you want to capture inputs/outputs from?"})
     
     job_name : str = field(default="FORGOTJOBNAME")
+    random_seed : int = field(default=42)
     post_ft_capture : str = field(default="n")
 
     aug_n : int = field(default = 1)
@@ -413,7 +414,7 @@ def save_data(data, file_path):
 save_dir = "./downloads"
 
 def main():
-
+    
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
@@ -434,7 +435,14 @@ def main():
         if model_args.token is not None:
             raise ValueError("`token` and `use_auth_token` are both specified. Please set only the argument `token`.")
         model_args.token = model_args.use_auth_token
-    
+
+    random.seed(data_args.random_seed)
+    np.random.seed(data_args.random_seed)
+    torch.manual_seed(data_args.random_seed)
+    torch.cuda.manual_seed_all(data_args.random_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
     # Check if data is saved for cluster
     config_path = os.path.join(save_dir, f"{data_args.task_name}_config")
     tokenizer_path = os.path.join(save_dir, f"{data_args.task_name}_tokenizer")
@@ -482,7 +490,7 @@ def main():
             )
 
     # Set seed before initializing model.
-    set_seed(42)
+    set_seed(data_args.random_seed)
 
     # Get the datasets: you can either provide your own CSV/JSON training and evaluation files (see below)
 

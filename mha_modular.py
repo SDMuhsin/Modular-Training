@@ -96,6 +96,7 @@ parser.add_argument("--num_labels",type=int)
 parser.add_argument("--task")
 parser.add_argument("--threshold_scale",type=float)
 parser.add_argument("--compression",type=int)
+parser.add_argument("--random_seed",type=int)
 args = parser.parse_args()
 
 def main():
@@ -105,8 +106,12 @@ def main():
     config_path = os.path.join(save_dir, f"{args.task}_config")
     tokenizer_path = os.path.join(save_dir, f"{args.task}_tokenizer")
     model_path = os.path.join(save_dir, f"{args.task}_model")
-
-
+    random.seed(args.random_seed)
+    np.random.seed(args.random_seed)
+    torch.manual_seed(args.random_seed)
+    torch.cuda.manual_seed_all(args.random_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     if not os.path.exists(config_path):
         config = AutoConfig.from_pretrained(
             args.model_name,

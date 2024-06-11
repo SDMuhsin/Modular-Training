@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the array of TASK_NAMEs
-TASK_NAMES=("boolq")  # Modify this array with your actual task names
+TASK_NAMES=("cb")  # Modify this array with your actual task names
 
 MODEL_TYPE="distilbert/distilbert-base-uncased"
 
@@ -14,7 +14,7 @@ parallel -j 1 -u 'python3 run_superglue_no_trainer.py \
   --task_name {} \
   --per_device_train_batch_size 32 \
   --learning_rate 2e-5 \
-  --num_train_epochs 3 \
+  --num_train_epochs 18 \
   --output_dir ./tmp/{} \
   --seed 42' ::: "${TASK_NAMES[@]}"
 
