@@ -10,5 +10,7 @@ scp -r ./glove-embeddings sdmuhsin@beluga.alliancecan.ca://home/sdmuhsin/scratch
 scp -r ./saves sdmuhsin@beluga.alliancecan.ca://home/sdmuhsin/scratch/sdmuhsin/transformers/modular-training-super-glue
 python3 -m pip install -e ../transformers/
 python3 -m pip install scipy==1.10.1 dill
+python3 -m pip install accelerate -U
+python3 -m pip install scikit-learn
 scp -r ~/nltk_data sdmuhsin@beluga.alliancecan.ca:/home/sdmuhsin/scratch/sdmuhsin/transformers/modular-training-super-glue/nltk_data
 #in run_sbatch.sh add export NLTK_DATA=..../nltk_data
