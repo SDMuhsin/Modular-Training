@@ -545,7 +545,7 @@ def main():
     
     #raw_datasets['train'] = raw_datasets['train'].select(range(0,24))
     # Only augment if the dataset doesn't exist
-    do_augment = False
+    do_augment = int(data_args.aug_n) == 0
     aug_n = int(data_args.aug_n)
     if augment and do_augment:
         train_dataset = raw_datasets['train']
