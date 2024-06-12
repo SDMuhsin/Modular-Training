@@ -264,7 +264,7 @@ def main():
     batch_count = count_files(mha_output_save_folder)
     
     print("Batch count : ",batch_count)
-    for epoch in range(num_epochs):
+    for epoch in range(0,num_epochs):
         
         total_loss = 0
         noisy_loss = 0
@@ -275,18 +275,15 @@ def main():
             #Load input and output
             try:
                 x_inputs = dropout_tensor( torch.load(f"{input_save_folder}/a_batch_{bIdx}.pt"), p ).to(device)
-                a_inputs =  dropout_tensor(torch.load(f"{input_save_folder}/b_batch_{bIdx}.pt"), p ).to(device)
-                if(x_inputs.shape[0] != 8 or a_inputs.shape[0] != 8):
-                    ec += 1
-                    continue
-            except:
+                a_inputs = torch.load(f"{input_save_folder}/b_batch_{bIdx}.pt").to(device)
+                
+            except Exception as e:
+                print(f"[e{epoch}b{bIdx}]Unable to dropout inputs?",e)
                 ec +=1
                 continue
             try:
                 normal_outputs = torch.load(f"{output_save_folder}/o_batch_{bIdx}.pt").to(device)
-                if(normal_outputs.shape[0] != 8):
-                    ec += 1
-                    continue
+
             except Exception as e:
                 ec += 1
                 continue
@@ -313,7 +310,7 @@ def main():
             normal_loss += loss_normal.item()
             augment_loss += loss_aug.item() if augment else 0
 
-        print(f"Epoch {epoch+1}, Loss: {total_loss} = {normal_loss} (normal) + {augment_loss} (augmented)  \r")
+        print(f"[MHA]Epoch {epoch+1}, Loss: {total_loss} = {normal_loss} (normal) + {augment_loss} (augmented)  \r")
         p+=pStep
     print("EC ",ec)
     save_dir = f"./saves/{args.model_name}/{args.job_name}/model"

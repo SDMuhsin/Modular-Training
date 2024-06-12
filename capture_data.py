@@ -345,7 +345,7 @@ import random
 nltk.download('stopwords')
 stop_words = set(stopwords.words('english'))
 
-def augment_sentence(sentence, glove_model_path='./glove-embeddings/glove.6B.100d.txt', aug_n=1, replace_percentage=0.4):
+def augment_sentence(sentence, glove_model_path='./glove-embeddings/glove.6B.100d.txt', aug_n=1, replace_percentage=0.2):
     """Applies augmentation to a single sentence using GloVe embeddings, replacing about 40% of non-stop words."""
     # Initialize the GloVe augmenter
     aug = naw.WordEmbsAug(
@@ -546,7 +546,20 @@ def main():
             augmented_data = pickle.load(f)
         print("Loaded augmented data from file.")
     
-    #raw_datasets['train'] = raw_datasets['train'].select(range(0,24))
+    #raw_datasets['train'] = raw_datasets['train'].select(range(0,2))
+
+    '''
+    print("------ BEFORE AUGMENT ---------")
+    for data in raw_datasets['train']:
+
+        for k in data.keys():
+            if k !=None:
+                print("____")
+                print("\t", k)
+                print("\t", data[k])
+                print("_____")
+    '''
+
     # Only augment if the dataset doesn't exist
     do_augment = int(data_args.aug_n) != 0
     aug_n = int(data_args.aug_n)
@@ -618,6 +631,27 @@ def main():
     if(do_augment):
         augmented_dataset = datasets.Dataset.from_dict(augmented_data)
         raw_datasets['train'] = augmented_dataset
+
+    def update_idx(example, idx):
+        example["idx"] = idx
+        return example
+
+    # Assuming raw_datasets['train'] is a Dataset object
+    raw_datasets['train'] = raw_datasets['train'].map(update_idx, with_indices=True)
+    
+    '''
+    print("------ AFTER AUGMENT ---------")
+    for data in raw_datasets['train']:
+
+        for k in data.keys():
+            if k !=None:
+                print("____")
+                print("\t",k)
+                print("\t",data[k])
+                print("_____")
+    '''
+    # Label correction
+
     # Load pretrained model and tokenizer
     #
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
@@ -928,7 +962,8 @@ def main():
             torch.save(a, f"{input_save_folder}/a_batch_{self.batch_idx}.pt")
             torch.save(b, f"{input_save_folder}/b_batch_{self.batch_idx}.pt")    
             self.batch_idx += 1
-    
+            
+
     modelbert = model.distilbert  
     hooks = [AttentionHook(i) for i in range(len(modelbert.transformer.layer))]
     layer_hooks = [LayerHook(i) for i in range(len(modelbert.transformer.layer))]
@@ -985,29 +1020,6 @@ def main():
         #trainer.save_metrics("eval", combined if task is not None and "mnli" in task else metrics)
 
    
-    #print(type(attention_hook.outputs))
-    #print(len(attention_hook.outputs))
-    #print(type(attention_hook.outputs[0]))
-    #print(len(attention_hook.outputs[0]))
-
-    #print(attention_hook.outputs[0][0])
-    
-    #print(type(attention_hook.inputs))
-    #print(len(attention_hook.inputs))
-    #print(type(attention_hook.inputs[0]))
-    #print(len(attention_hook.inputs[0]))
-    #print(attention_hook.inputs[0][0])
-    #print(attention_hook.inputs[0][1])
-    #print(attention_hook.inputs[0][2])
-
-    #print(attention_hook.inputs[0][3])
-
-    #print(attention_hook.inputs[0][4])
-    #print(attention_hook.inputs[0][5])
-    #print(attention_hook.inputs[0][6])
-    #print(type(attention_hook.inputs[0]))
-    #print(len((attention_hook.inputs[0])))
-    # print(attention_hook.outputs)
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)

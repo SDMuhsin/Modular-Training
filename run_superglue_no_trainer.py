@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Finetuning a 🤗 Transformers model for sequence classification on GLUE."""
-
+import copy
 import argparse
 import json
 import logging
@@ -48,6 +48,7 @@ from transformers import (
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from evaluate import load
+from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.42.0.dev0")
@@ -358,7 +359,30 @@ def main():
    
     non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
     print(f"Non label column names",non_label_column_names)
+
     
+
+    my_model = copy.deepcopy(model)
+    
+    module_trained_for = 100
+    
+    args.job_name = "cb100"
+    for i in range(6):
+        
+        module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
+        mha = MultiHeadSelfAttentionLowRank(config,compression=2)
+
+        mha.load_state_dict(torch.load(module_path))
+        my_model.distilbert.transformer.layer[i].attention = mha
+        
+        
+        module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
+        ffn = FFNLowRank(config,compression=2)
+        ffn.load_state_dict(torch.load(module_path))
+        my_model.distilbert.transformer.layer[i].ffn = ffn
+    
+    model = my_model 
+
     # Preprocessing the datasets
     if args.task_name is not None:
         sentence1_key, sentence2_key, sentence3_key = task_to_keys[args.task_name]
@@ -752,7 +776,7 @@ def main():
             print(f"Directory '{directory}' already exists.")
     baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}"
     create_directory_if_not_exists(baseline_model_dir)
-    torch.save(model.state_dict(),f"{baseline_model_dir}/baseline_model.pth")
+    #torch.save(model.state_dict(),f"{baseline_model_dir}/baseline_model.pth")
     if args.output_dir is not None:
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(model)

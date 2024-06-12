@@ -303,6 +303,30 @@ def augment_sentence(sentence, glove_model_path='./glove-embeddings/glove.6B.100
         max_attempts -= 1
     return list(augmented_sentences)
 
+def check_weights_allclose(module1, module2, atol=1e-8, rtol=1e-5):
+    """
+    Checks if the learnable weights of two PyTorch modules are approximately the same
+    using an element-wise comparison.
+
+    Args:
+    module1 (nn.Module): The first PyTorch module.
+    module2 (nn.Module): The second PyTorch module.
+    atol (float): Absolute tolerance parameter for `torch.allclose()`.
+    rtol (float): Relative tolerance parameter for `torch.allclose()`.
+
+    Returns:
+    bool: True if all learnable weights are approximately the same within the specified tolerance, False otherwise.
+    """
+    # Check if both modules have the same set of parameter keys
+    if set(module1.state_dict().keys()) != set(module2.state_dict().keys()):
+        return False
+
+    # Compare each parameter
+    for (name1, param1), (name2, param2) in zip(module1.named_parameters(), module2.named_parameters()):
+        if name1 != name2 or not torch.allclose(param1, param2, atol=atol, rtol=rtol):
+            return False
+
+    return True
 save_dir = "./downloads"
 def main():
     args = parse_args()
@@ -491,17 +515,29 @@ def main():
            
             module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
             mha = MultiHeadSelfAttentionLowRank(config,compression=int(args.encoder_compression))
+
+            mha_1 = copy.deepcopy(mha)
+
             mha.load_state_dict(torch.load(module_path))
             my_model.distilbert.transformer.layer[i].attention = mha
-
+            
+            allClose = check_weights_allclose(mha_1,my_model.distilbert.transformer.layer[i].attention)
+            if(allClose):
+                print("\n\n\n\n ALL CLOSE \n\n\n\n")
 
         if (args.encoder_modularity == 'F' or args.encoder_modularity == 'MF'):
             
             module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
             ffn = FFNLowRank(config,compression=int(args.encoder_compression))
+
+            ffn_1 = copy.deepcopy(ffn)
+
             ffn.load_state_dict(torch.load(module_path))
             my_model.distilbert.transformer.layer[i].ffn = ffn
-
+            
+            allClose = check_weights_allclose(ffn_1,my_model.distilbert.transformer.layer[i].ffn)
+            if(allClose):
+                print("\n\n\n\n ALL CLOSE \n\n\n\n")
         else:
             print("\n\n\n NO MODULARITY SELECTED, TRAINING FULL MODEL\n\n\n")
        

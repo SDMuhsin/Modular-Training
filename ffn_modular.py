@@ -287,9 +287,8 @@ def main():
                 #dropped_h_inputs = dropout_tensor(h_inputs,0.05).to(device)
                 normal_outputs = torch.load(f"{output_save_folder}/o_batch_{bIdx}.pt").to(device)
                 
-                if(h_inputs.shape[0] != 8 or normal_outputs.shape[0] != 8):
-                    continue
             except:
+                print("Unable load/dropout input/output")
                 continue
 
             aug_outputs = None
@@ -323,7 +322,7 @@ def main():
             normal_loss += loss_normal.item()
             augment_loss += loss_aug.item() if augment else 0
 
-        print(f"Epoch {epoch+1}, Loss: {total_loss} = {normal_loss} (normal) + {augment_loss} (augmented)  \r")
+        print(f"[FFN] Epoch {epoch+1}, Loss: {total_loss} = {normal_loss} (normal) + {augment_loss} (augmented)  \r")
         p += pStep
     save_dir = f"./saves/{args.model_name}/{args.job_name}/model"
     create_directory_if_not_exists(save_dir) 
