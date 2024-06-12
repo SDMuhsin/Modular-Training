@@ -414,7 +414,9 @@ def save_data(data, file_path):
 save_dir = "./downloads"
 
 def main():
-    
+    os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["NUMEXPR_NUM_THREADS"] = "1"
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
@@ -436,6 +438,7 @@ def main():
             raise ValueError("`token` and `use_auth_token` are both specified. Please set only the argument `token`.")
         model_args.token = model_args.use_auth_token
 
+    training_args.dataloader_num_workers = 0
     random.seed(data_args.random_seed)
     np.random.seed(data_args.random_seed)
     torch.manual_seed(data_args.random_seed)
@@ -843,7 +846,7 @@ def main():
 
     # Log a few random samples from the training set:
     if training_args.do_train:
-        for index in random.sample(range(len(train_dataset)), 3):
+        for index in random.sample(range(len(train_dataset)), 1):
             logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # Load or save metric
@@ -917,7 +920,8 @@ def main():
         def __call__(self, module, inputs, outputs):
             
             input_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/mha/inputs/encoder_{self.encoder_idx}"
-            create_directory_if_not_exists(input_save_folder) 
+            create_directory_if_not_exists(input_save_folder)
+
             a = inputs[0]
             b = inputs[1]
 

@@ -1,0 +1,304 @@
+rm: cannot remove './saves/distilbert/distilbert-base-uncased/cb/*': No such file or directory
+Generating data for encoder 0
+BertModel loaded from: transformers.models.bert.modeling_bert
+Transformers module loaded from: /home/a40-ko-lab/miniconda3/envs/jiantenv/lib/python3.9/site-packages/transformers/__init__.py
+06/11/2024 20:44:08 - WARNING - __main__ - Process rank: 0, device: cuda:0, n_gpu: 1, distributed training: False, 16-bits training: False
+06/11/2024 20:44:08 - INFO - __main__ - Training/evaluation parameters TrainingArguments(
+_n_gpu=1,
+accelerator_config={'split_batches': False, 'dispatch_batches': None, 'even_batches': True, 'use_seedable_sampler': True, 'non_blocking': False, 'gradient_accumulation_kwargs': None, 'use_configured_state': False},
+adafactor=False,
+adam_beta1=0.9,
+adam_beta2=0.999,
+adam_epsilon=1e-08,
+auto_find_batch_size=False,
+batch_eval_metrics=False,
+bf16=False,
+bf16_full_eval=False,
+data_seed=None,
+dataloader_drop_last=False,
+dataloader_num_workers=0,
+dataloader_persistent_workers=False,
+dataloader_pin_memory=True,
+dataloader_prefetch_factor=None,
+ddp_backend=None,
+ddp_broadcast_buffers=None,
+ddp_bucket_cap_mb=None,
+ddp_find_unused_parameters=None,
+ddp_timeout=1800,
+debug=[],
+deepspeed=None,
+disable_tqdm=False,
+dispatch_batches=None,
+do_eval=True,
+do_predict=False,
+do_train=True,
+eval_accumulation_steps=None,
+eval_delay=0,
+eval_do_concat_batches=True,
+eval_steps=None,
+eval_strategy=no,
+evaluation_strategy=None,
+fp16=False,
+fp16_backend=auto,
+fp16_full_eval=False,
+fp16_opt_level=O1,
+fsdp=[],
+fsdp_config={'min_num_params': 0, 'xla': False, 'xla_fsdp_v2': False, 'xla_fsdp_grad_ckpt': False},
+fsdp_min_num_params=0,
+fsdp_transformer_layer_cls_to_wrap=None,
+full_determinism=False,
+gradient_accumulation_steps=1,
+gradient_checkpointing=False,
+gradient_checkpointing_kwargs=None,
+greater_is_better=None,
+group_by_length=False,
+half_precision_backend=auto,
+hub_always_push=False,
+hub_model_id=None,
+hub_private_repo=False,
+hub_strategy=every_save,
+hub_token=<HUB_TOKEN>,
+ignore_data_skip=False,
+include_inputs_for_metrics=False,
+include_num_input_tokens_seen=False,
+include_tokens_per_second=False,
+jit_mode_eval=False,
+label_names=None,
+label_smoothing_factor=0.0,
+learning_rate=2e-05,
+length_column_name=length,
+load_best_model_at_end=False,
+local_rank=0,
+log_level=passive,
+log_level_replica=warning,
+log_on_each_node=True,
+logging_dir=/tmp/cb/runs/Jun11_20-44-08_a40kolab,
+logging_first_step=False,
+logging_nan_inf_filter=True,
+logging_steps=500,
+logging_strategy=steps,
+lr_scheduler_kwargs={},
+lr_scheduler_type=linear,
+max_grad_norm=1.0,
+max_steps=-1,
+metric_for_best_model=None,
+mp_parameters=,
+neftune_noise_alpha=None,
+no_cuda=False,
+num_train_epochs=10.0,
+optim=adamw_torch,
+optim_args=None,
+optim_target_modules=None,
+output_dir=/tmp/cb/,
+overwrite_output_dir=True,
+past_index=-1,
+per_device_eval_batch_size=8,
+per_device_train_batch_size=32,
+prediction_loss_only=False,
+push_to_hub=False,
+push_to_hub_model_id=None,
+push_to_hub_organization=None,
+push_to_hub_token=<PUSH_TO_HUB_TOKEN>,
+ray_scope=last,
+remove_unused_columns=True,
+report_to=[],
+restore_callback_states_from_checkpoint=False,
+resume_from_checkpoint=None,
+run_name=/tmp/cb/,
+save_on_each_node=False,
+save_only_model=False,
+save_safetensors=True,
+save_steps=500,
+save_strategy=steps,
+save_total_limit=None,
+seed=42,
+skip_memory_metrics=True,
+split_batches=None,
+tf32=None,
+torch_compile=False,
+torch_compile_backend=None,
+torch_compile_mode=None,
+torchdynamo=None,
+tpu_metrics_debug=False,
+tpu_num_cores=None,
+use_cpu=False,
+use_ipex=False,
+use_legacy_prediction_loop=False,
+use_mps_device=False,
+warmup_ratio=0.0,
+warmup_steps=0,
+weight_decay=0.0,
+)
+Loaded dataset from disk
+Data augmentation: 0/24Memory Usage: 565.3125 MB
+Data augmentation: 1/24Data augmentation: 2/24Data augmentation: 3/24Data augmentation: 4/24Data augmentation: 5/24Data augmentation: 6/24Data augmentation: 7/24Data augmentation: 8/24Data augmentation: 9/24Data augmentation: 10/24Data augmentation: 11/24Data augmentation: 12/24Data augmentation: 13/24Data augmentation: 14/24Data augmentation: 15/24Data augmentation: 16/24Data augmentation: 17/24Data augmentation: 18/24Data augmentation: 19/24Data augmentation: 20/24Data augmentation: 21/24Data augmentation: 22/24Data augmentation: 23/24Augmented data saved to file.
+06/11/2024 20:44:30 - INFO - datasets.arrow_dataset - Loading cached processed dataset at /media/a40-ko-lab/c61d4ea0-b8fe-4205-9815-f7d3d054043c/sayed/Sayed/transformers/weight_sharing/modular_superglue/downloads/cb/validation/cache-2e2234b51f241474.arrow
+06/11/2024 20:44:30 - INFO - datasets.arrow_dataset - Loading cached processed dataset at /media/a40-ko-lab/c61d4ea0-b8fe-4205-9815-f7d3d054043c/sayed/Sayed/transformers/weight_sharing/modular_superglue/downloads/cb/test/cache-cd49131ddb776eb3.arrow
+06/11/2024 20:44:30 - INFO - __main__ - Sample 24 of the training set: {'input_ids': [101, 1036, 1036, 2017, 1005, 2310, 2657, 2242, 2066, 2008, 2077, 1012, 4033, 1005, 1056, 2017, 1010, 5261, 1029, 1005, 1005, 5261, 2018, 2042, 16697, 2011, 2216, 4165, 2062, 16697, 2084, 1996, 2500, 2005, 2204, 3114, 2021, 10149, 2071, 2156, 2008, 2002, 2001, 4895, 28139, 19362, 2098, 2000, 2265, 2009, 2004, 2002, 3724, 2370, 2185, 2013, 1996, 7684, 4675, 1012, 102, 5261, 2001, 4895, 28139, 19362, 2098, 2000, 2265, 2002, 2018, 2042, 16697, 102, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 'attention_mask': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}.
+06/11/2024 20:44:30 - INFO - __main__ - *** Evaluate ***
+Directory './saves/distilbert/distilbert-base-uncased/cb/mha/outputs/encoder_0' created successfully.
+Directory './saves/distilbert/distilbert-base-uncased/cb/ffn/inputs/encoder_0' created successfully.
+Directory './saves/distilbert/distilbert-base-uncased/cb/ffn/outputs/encoder_0' created successfully.
+batch_idx = 0
+Directory './saves/distilbert/distilbert-base-uncased/cb/mha/inputs/encoder_0' created successfully.
+batch_idx = 1
+batch_idx = 2
+batch_idx = 3
+At problematic step
+(tensor([[[ 0.3469, -0.1626, -0.2333,  ...,  0.1487,  0.0865,  0.1422],
+         [-0.5767,  0.0710, -1.0852,  ...,  0.4659,  0.4116,  0.2435],
+         [-0.9227,  0.0052, -0.9692,  ...,  0.2801,  0.2364,  0.2167],
+         ...,
+         [ 0.0421, -0.2901,  0.6292,  ..., -0.3764, -0.3794,  0.2678],
+         [-0.0904, -0.3364,  0.4178,  ..., -0.3281, -0.2813,  0.1256],
+         [ 0.1164, -0.1905,  0.4776,  ...,  0.0055, -0.6077,  0.0363]],
+
+        [[ 0.3469, -0.1626, -0.2333,  ...,  0.1487,  0.0865,  0.1422],
+         [-0.5767,  0.0710, -1.0852,  ...,  0.4659,  0.4116,  0.2435],
+         [-0.9227,  0.0052, -0.9692,  ...,  0.2801,  0.2364,  0.2167],
+         ...,
+         [ 0.0421, -0.2901,  0.6292,  ..., -0.3764, -0.3794,  0.2678],
+         [-0.0904, -0.3364,  0.4178,  ..., -0.3281, -0.2813,  0.1256],
+         [ 0.1164, -0.1905,  0.4776,  ...,  0.0055, -0.6077,  0.0363]],
+
+        [[ 0.3469, -0.1626, -0.2333,  ...,  0.1487,  0.0865,  0.1422],
+         [-0.3058, -0.5638, -0.0471,  ...,  0.8133,  0.7999,  0.0353],
+         [-0.5472, -0.6754,  0.2229,  ...,  0.1789, -0.0824,  0.0410],
+         ...,
+         [ 0.0421, -0.2901,  0.6292,  ..., -0.3764, -0.3794,  0.2678],
+         [-0.0904, -0.3364,  0.4178,  ..., -0.3281, -0.2813,  0.1256],
+         [ 0.1164, -0.1905,  0.4776,  ...,  0.0055, -0.6077,  0.0363]],
+
+        ...,
+
+        [[ 0.3469, -0.1626, -0.2333,  ...,  0.1487,  0.0865,  0.1422],
+         [-0.1598,  0.1297, -0.2141,  ...,  0.7662,  1.0942,  0.1204],
+         [ 0.0734,  0.6859, -0.9092,  ...,  0.3233,  0.8928,  0.5161],
+         ...,
+         [ 0.0421, -0.2901,  0.6292,  ..., -0.3764, -0.3794,  0.2678],
+         [-0.0904, -0.3364,  0.4178,  ..., -0.3281, -0.2813,  0.1256],
+         [ 0.1164, -0.1905,  0.4776,  ...,  0.0055, -0.6077,  0.0363]],
+
+        [[ 0.3469, -0.1626, -0.2333,  ...,  0.1487,  0.0865,  0.1422],
+         [-0.5767,  0.0710, -1.0852,  ...,  0.4659,  0.4116,  0.2435],
+         [-0.9227,  0.0052, -0.9692,  ...,  0.2801,  0.2364,  0.2167],
+         ...,
+         [ 0.0421, -0.2901,  0.6292,  ..., -0.3764, -0.3794,  0.2678],
+         [-0.0904, -0.3364,  0.4178,  ..., -0.3281, -0.2813,  0.1256],
+         [ 0.1164, -0.1905,  0.4776,  ...,  0.0055, -0.6077,  0.0363]],
+
+        [[ 0.3469, -0.1626, -0.2333,  ...,  0.1487,  0.0865,  0.1422],
+         [-0.5767,  0.0710, -1.0852,  ...,  0.4659,  0.4116,  0.2435],
+         [-0.9227,  0.0052, -0.9692,  ...,  0.2801,  0.2364,  0.2167],
+         ...,
+         [ 0.0421, -0.2901,  0.6292,  ..., -0.3764, -0.3794,  0.2678],
+         [-0.0904, -0.3364,  0.4178,  ..., -0.3281, -0.2813,  0.1256],
+         [ 0.1164, -0.1905,  0.4776,  ...,  0.0055, -0.6077,  0.0363]]],
+       device='cuda:0'), tensor([[1, 1, 1,  ..., 0, 0, 0],
+        [1, 1, 1,  ..., 0, 0, 0],
+        [1, 1, 1,  ..., 0, 0, 0],
+        ...,
+        [1, 1, 1,  ..., 0, 0, 0],
+        [1, 1, 1,  ..., 0, 0, 0],
+        [1, 1, 1,  ..., 0, 0, 0]], device='cuda:0'), None, False)
+batch_idx = 4
+batch_idx = 5
+***** eval metrics *****
+  eval_runtime            = 0:00:00.40
+  eval_samples            =         48
+  eval_samples_per_second =    117.591
+  eval_steps_per_second   =     14.699
+Data generated successfully for encoder 0
+[nltk_data] Downloading package stopwords to /home/a40-ko-
+[nltk_data]     lab/nltk_data...
+[nltk_data]   Package stopwords is already up-to-date!
+[INFO|configuration_utils.py:731] 2024-06-11 20:44:30,302 >> loading configuration file ./downloads/cb_config/config.json
+[INFO|configuration_utils.py:800] 2024-06-11 20:44:30,305 >> Model config DistilBertConfig {
+  "_name_or_path": "./downloads/cb_config",
+  "activation": "gelu",
+  "architectures": [
+    "DistilBertForMaskedLM"
+  ],
+  "attention_dropout": 0.1,
+  "dim": 768,
+  "dropout": 0.1,
+  "finetuning_task": "cb",
+  "hidden_dim": 3072,
+  "id2label": {
+    "0": "LABEL_0",
+    "1": "LABEL_1",
+    "2": "LABEL_2"
+  },
+  "initializer_range": 0.02,
+  "label2id": {
+    "LABEL_0": 0,
+    "LABEL_1": 1,
+    "LABEL_2": 2
+  },
+  "max_position_embeddings": 512,
+  "model_type": "distilbert",
+  "n_heads": 12,
+  "n_layers": 6,
+  "pad_token_id": 0,
+  "qa_dropout": 0.1,
+  "seq_classif_dropout": 0.2,
+  "sinusoidal_pos_embds": false,
+  "tie_weights_": true,
+  "transformers_version": "4.42.0.dev0",
+  "vocab_size": 30522
+}
+
+[INFO|tokenization_utils_base.py:2107] 2024-06-11 20:44:30,307 >> loading file vocab.txt
+[INFO|tokenization_utils_base.py:2107] 2024-06-11 20:44:30,307 >> loading file tokenizer.json
+[INFO|tokenization_utils_base.py:2107] 2024-06-11 20:44:30,307 >> loading file added_tokens.json
+[INFO|tokenization_utils_base.py:2107] 2024-06-11 20:44:30,307 >> loading file special_tokens_map.json
+[INFO|tokenization_utils_base.py:2107] 2024-06-11 20:44:30,307 >> loading file tokenizer_config.json
+[INFO|configuration_utils.py:731] 2024-06-11 20:44:30,331 >> loading configuration file ./downloads/cb_model/config.json
+[INFO|configuration_utils.py:800] 2024-06-11 20:44:30,332 >> Model config DistilBertConfig {
+  "_name_or_path": "./downloads/cb_model",
+  "activation": "gelu",
+  "architectures": [
+    "DistilBertForSequenceClassification"
+  ],
+  "attention_dropout": 0.1,
+  "dim": 768,
+  "dropout": 0.1,
+  "finetuning_task": "cb",
+  "hidden_dim": 3072,
+  "id2label": {
+    "0": "LABEL_0",
+    "1": "LABEL_1",
+    "2": "LABEL_2"
+  },
+  "initializer_range": 0.02,
+  "label2id": {
+    "LABEL_0": 0,
+    "LABEL_1": 1,
+    "LABEL_2": 2
+  },
+  "max_position_embeddings": 512,
+  "model_type": "distilbert",
+  "n_heads": 12,
+  "n_layers": 6,
+  "pad_token_id": 0,
+  "qa_dropout": 0.1,
+  "seq_classif_dropout": 0.2,
+  "sinusoidal_pos_embds": false,
+  "tie_weights_": true,
+  "torch_dtype": "float32",
+  "transformers_version": "4.42.0.dev0",
+  "vocab_size": 30522
+}
+
+[INFO|modeling_utils.py:3474] 2024-06-11 20:44:30,382 >> loading weights file ./downloads/cb_model/model.safetensors
+[INFO|modeling_utils.py:4283] 2024-06-11 20:44:30,425 >> All model checkpoint weights were used when initializing DistilBertForSequenceClassification.
+
+[INFO|modeling_utils.py:4291] 2024-06-11 20:44:30,425 >> All the weights of DistilBertForSequenceClassification were initialized from the model checkpoint at ./downloads/cb_model.
+If your task is similar to the task the model of the checkpoint was trained on, you can already use DistilBertForSequenceClassification for predictions without further training.
+Running tokenizer on dataset:   0%|          | 0/48 [00:00<?, ? examples/s]Running tokenizer on dataset: 100%|██████████| 48/48 [00:00<00:00, 4972.25 examples/s]
+Loading cached processed dataset at /media/a40-ko-lab/c61d4ea0-b8fe-4205-9815-f7d3d054043c/sayed/Sayed/transformers/weight_sharing/modular_superglue/downloads/cb/validation/cache-2e2234b51f241474.arrow
+Loading cached processed dataset at /media/a40-ko-lab/c61d4ea0-b8fe-4205-9815-f7d3d054043c/sayed/Sayed/transformers/weight_sharing/modular_superglue/downloads/cb/test/cache-cd49131ddb776eb3.arrow
+[INFO|trainer.py:3753] 2024-06-11 20:44:30,681 >> ***** Running Evaluation *****
+[INFO|trainer.py:3755] 2024-06-11 20:44:30,681 >>   Num examples = 48
+[INFO|trainer.py:3758] 2024-06-11 20:44:30,681 >>   Batch size = 8
+  0%|          | 0/6 [00:00<?, ?it/s] 67%|██████▋   | 4/6 [00:00<00:00, 16.79it/s]100%|██████████| 6/6 [00:00<00:00, 20.59it/s]

@@ -26,9 +26,11 @@ export model_name task epochs job_name aug_n do_capture random_seed
 export CUDA_VISIBLE_DEVICES=1  # Set this once if it's constant, or handle dynamically within the parallel command if it varies.
 
 # Check if data capture should be performed
-unset CUDA_VISIBLE_DEVICES
+
 if [ "$do_capture" = "y" ]; then
-    seq 0 5 | parallel -j 6 --env model_name,task,epochs,job_name,aug_n,CUDA_VISIBLE_DEVICES 'echo "Generating data for encoder {}" && \
+    
+    rm ./saves/$model_name/$task/* -r
+    seq 0 5 | parallel -j 1 --env model_name,task,epochs,job_name,aug_n,CUDA_VISIBLE_DEVICES 'echo "Generating data for encoder {}" && \
     python3 capture_data.py \
       --model_name_or_path $model_name \
       --task_name $task \
@@ -46,7 +48,7 @@ if [ "$do_capture" = "y" ]; then
       --random_seed $random_seed \
       && echo "Data generated successfully for encoder {}"'
 fi
-
+unset CUDA_VISIBLE_DEVICES
 export job_name epochs task encoder_compression random_seed
 
 if [ "$do_modular_train_sa" = "y" ] && [ "$do_modular_train_bl" = "y" ]; then
