@@ -30,7 +30,7 @@ export CUDA_VISIBLE_DEVICES=1  # Set this once if it's constant, or handle dynam
 if [ "$do_capture" = "y" ]; then
     
     rm ./saves/$model_name/$task/* -r
-    seq 0 5 | parallel -j 1 --env model_name,task,epochs,job_name,aug_n,CUDA_VISIBLE_DEVICES 'echo "Generating data for encoder {}" && \
+    seq 0 5 | parallel -j 6 -u --env model_name,task,epochs,job_name,aug_n,CUDA_VISIBLE_DEVICES 'echo "Generating data for encoder {}" && \
     python3 capture_data.py \
       --model_name_or_path $model_name \
       --task_name $task \

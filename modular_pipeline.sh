@@ -19,7 +19,7 @@ model_name="distilbert/distilbert-base-uncased"
 
 
 encoder_idx=0
-
+random_seed=42
 rm ./saves/"${task}_augmented_dataset.pkl"
 while [ $encoder_idx -le 5 ]
 do
@@ -41,7 +41,8 @@ do
 		  --overwrite_output_dir \
 		  --job_name $job_name \
 		  --encoder_idx $encoder_idx \
-		  --aug_n $aug_n
+		  --aug_n $aug_n \
+		  --random_seed $random_seed 
 	fi
 	echo "Data generated succesfully"
 	
@@ -57,9 +58,8 @@ do
 
 	    # Execute one instance of dis_mha_modular.py and one instance of dis_ffn_modular.py in parallel for the same encoder index
 	    parallel -j 2 -u ::: \
-		"echo 'Modular training for SA module, encoder $encoder_idx'; python3 mha_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression" \
-		"echo 'Modular training for BL module, encoder $encoder_idx'; python3 ffn_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression"
-
+		"echo 'Modular training for SA module, encoder $encoder_idx'; python3 mha_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"\
+		"echo 'Modular training for BL module, encoder $encoder_idx'; python3 ffn_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"
 	fi	
 	encoder_idx=$((encoder_idx + 1))
 done
@@ -87,7 +87,8 @@ then
 	  --job_name $job_name \
 	  --last_mod_trained_for $epochs \
 	  --encoder_modularity $modularity\
-	  --encoder_compression $encoder_compression 
+	  --encoder_compression $encoder_compression \
+	  --random_seed $random_seed 
 fi
 
 
