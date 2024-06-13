@@ -877,7 +877,7 @@ def main():
             # Combine the original loss and the distillation loss
             alpha = 0.5  # Weighting factor for distillation loss, needs tuning
             loss = (1 - alpha) * loss + alpha * dist_loss * (temperature ** 2)
-
+            
             
             # We keep track of the loss at each epoch
             if args.with_tracking:
