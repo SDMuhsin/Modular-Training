@@ -445,7 +445,7 @@ def main():
     torch.cuda.manual_seed_all(data_args.random_seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
+    os.environ['PYTHONHASHSEED'] = str(data_args.random_seed)
     # Check if data is saved for cluster
     config_path = os.path.join(save_dir, f"{data_args.task_name}_config")
     tokenizer_path = os.path.join(save_dir, f"{data_args.task_name}_tokenizer")
@@ -503,7 +503,7 @@ def main():
 
         if not os.path.exists(dataset_path):
             # Downloading and loading a dataset from the hub.
-            if data_args.task_name == "rte":
+            if data_args.task_name in ["rte","stsb","mrpc"]:
                 raw_datasets = load_dataset("glue", data_args.task_name)
             else:
                 raw_datasets = load_dataset("aps/super_glue", data_args.task_name)
@@ -639,17 +639,17 @@ def main():
     # Assuming raw_datasets['train'] is a Dataset object
     raw_datasets['train'] = raw_datasets['train'].map(update_idx, with_indices=True)
     
-    '''
+    ''' 
     print("------ AFTER AUGMENT ---------")
     for data in raw_datasets['train']:
 
-        for k in data.keys():
+        for k in task_to_keys[data_args.task_name]:
             if k !=None:
                 print("____")
                 print("\t",k)
                 print("\t",data[k])
                 print("_____")
-    '''
+    exit() '''
     # Label correction
 
     # Load pretrained model and tokenizer
@@ -884,9 +884,11 @@ def main():
             logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # Load or save metric
-    metric = evaluate.load("./downloads/evaluate/metrics/super_glue/super_glue.py", data_args.task_name)
-
-    # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
+    # Get the metric function
+    if data_args.task_name not in ["rte","mrpc","stsb"]:
+        metric = evaluate.load("./downloads/evaluate/metrics/super_glue/super_glue.py", data_args.task_name)
+    else:
+        metric = evaluate.load("./downloads/evaluate/metrics/glue/glue.py", data_args.task_name)    # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions

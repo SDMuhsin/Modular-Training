@@ -49,7 +49,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank 
 from torch.nn import KLDivLoss
-from torch.nn.functional import softmax, log_softmax
+from torch.nn.functional import softmax, log_softmax, kl_div
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.42.0.dev0")
@@ -342,7 +342,7 @@ def main():
     torch.cuda.manual_seed_all(args.random_seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
+    os.environ['PYTHONHASHSEED'] = str(args.random_seed)
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
     send_example_telemetry("run_glue_no_trainer", args)
@@ -784,9 +784,10 @@ def main():
         accelerator.init_trackers("glue_no_trainer", experiment_config)
 
     # Get the metric function
-    if args.task_name is not None:
+    if args.task_name in ["rte","mrpc","stsb"]:
         metric = evaluate.load("./downloads/evaluate/metrics/super_glue/super_glue.py", args.task_name)
-
+    else:
+        metric = evaluate.load("./downloads/evaluate/metrics/glue/glue.py", args.task_name)
 
     # Train!
     total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
@@ -834,26 +835,22 @@ def main():
     # update the progress_bar if load from checkpoint
     progress_bar.update(completed_steps)
     
-
     #Distillation
-
     distillation_loss_fn = KLDivLoss(reduction='batchmean')
     temperature = 2.0  # Temperature can be tunedi
-
     
     # Preparing the models with accelerator
     teacher= accelerator.prepare(
         teacher
     )
-
     teacher.eval()
 
     for epoch in range(starting_epoch, args.num_train_epochs):
+
         model.train()
         if args.with_tracking:
             total_loss = 0
         if args.resume_from_checkpoint and epoch == starting_epoch and resume_step is not None:
-            # We skip the first `n` batches in the dataloader when resuming from a checkpoint
             active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
         else:
             active_dataloader = train_dataloader
@@ -862,23 +859,23 @@ def main():
             
             outputs = model(**batch)
             loss = outputs.loss
-
+                
             with torch.no_grad():
                 teacher_outputs = teacher(**batch)
                 teacher_logits = teacher_outputs.logits
 
             student_logits = outputs.logits
+     
             # Calculate distillation loss
             dist_loss = distillation_loss_fn(
-                log_softmax(student_logits / temperature, dim=-1),
+               log_softmax(student_logits / temperature, dim=-1),
                 softmax(teacher_logits / temperature, dim=-1)
-            )
+            )          
 
             # Combine the original loss and the distillation loss
             alpha = 0.5  # Weighting factor for distillation loss, needs tuning
-            loss = (1 - alpha) * loss + alpha * dist_loss * (temperature ** 2)
-            
-            
+            #loss = (1 - alpha) * loss + alpha * dist_loss * (temperature ** 2)
+                        
             # We keep track of the loss at each epoch
             if args.with_tracking:
                 total_loss += loss.detach().float()

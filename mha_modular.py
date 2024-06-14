@@ -112,6 +112,7 @@ def main():
     torch.cuda.manual_seed_all(args.random_seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+    os.environ['PYTHONHASHSEED'] = str(args.random_seed)
     if not os.path.exists(config_path):
         config = AutoConfig.from_pretrained(
             args.model_name,
@@ -182,7 +183,7 @@ def main():
     num_epochs = int(args.epochs)
 
     # Training mode
-    device = torch.device("cuda:1")
+    device = torch.device("cuda:0")
     attention_layer = attention_layer.to(device)
     original_sa = original_sa.to(device)
     original_sa.eval()

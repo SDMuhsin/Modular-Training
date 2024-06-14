@@ -292,7 +292,7 @@ def main():
     ''' CHANGE THESE LINES '''
     if args.task_name is not None:
         # Downloading and loading a dataset from the hub.
-        if (args.task_name == "rte"):
+        if (args.task_name in ["rte","stsb","mrpc"]):
             raw_datasets = load_dataset("glue", args.task_name)
 
         else:
@@ -361,12 +361,12 @@ def main():
     print(f"Non label column names",non_label_column_names)
 
     
-
+    ''' 
     my_model = copy.deepcopy(model)
     
     module_trained_for = 100
     
-    args.job_name = "cb100"
+    args.job_name = "cbAblation"
     for i in range(6):
         
         module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
@@ -382,7 +382,7 @@ def main():
         my_model.distilbert.transformer.layer[i].ffn = ffn
     
     model = my_model 
-
+    '''
     # Preprocessing the datasets
     if args.task_name is not None:
         sentence1_key, sentence2_key, sentence3_key = task_to_keys[args.task_name]
@@ -626,8 +626,11 @@ def main():
         return {"accuracy": accuracy["accuracy"], "f1": f1["f1"]}
     
     if args.task_name is not None:
-             
-        metric = load("super_glue",args.task_name)
+            
+        if(args.task_name in ["rte","stsb","mrpc"]):
+            metric = load("glue",args.task_name)
+        else:
+            metric = load("super_glue",args.task_name)
     
 
     # Train!
@@ -675,7 +678,8 @@ def main():
 
     # update the progress_bar if load from checkpoint
     progress_bar.update(completed_steps)
-
+    
+    global_results = {}
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
         if args.with_tracking:
@@ -731,7 +735,7 @@ def main():
             )  
         eval_metric = metric.compute()        
         logger.info(f"[EVAL] epoch {epoch}: {eval_metric}")
-
+        global_results[str(epoch)] = eval_metric
         if args.with_tracking:
             accelerator.log(
                 {
@@ -776,7 +780,7 @@ def main():
             print(f"Directory '{directory}' already exists.")
     baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}"
     create_directory_if_not_exists(baseline_model_dir)
-    #torch.save(model.state_dict(),f"{baseline_model_dir}/baseline_model.pth")
+    torch.save(model.state_dict(),f"{baseline_model_dir}/baseline_model.pth")
     if args.output_dir is not None:
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(model)
@@ -818,7 +822,7 @@ def main():
     if args.output_dir is not None:
         all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
         with open(os.path.join(args.output_dir, "all_results.json"), "w") as f:
-            json.dump(all_results, f)
+            json.dump(global_results, f)
 
 
 if __name__ == "__main__":

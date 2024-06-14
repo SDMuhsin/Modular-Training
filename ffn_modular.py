@@ -113,7 +113,7 @@ def main():
     torch.cuda.manual_seed_all(args.random_seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
+    os.environ['PYTHONHASHSEED'] = str(args.random_seed)
     if not os.path.exists(config_path):
         config = AutoConfig.from_pretrained(
             args.model_name,
