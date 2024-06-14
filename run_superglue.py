@@ -784,7 +784,7 @@ def main():
         accelerator.init_trackers("glue_no_trainer", experiment_config)
 
     # Get the metric function
-    if args.task_name in ["rte","mrpc","stsb"]:
+    if args.task_name not in ["rte","mrpc","stsb"]:
         metric = evaluate.load("./downloads/evaluate/metrics/super_glue/super_glue.py", args.task_name)
     else:
         metric = evaluate.load("./downloads/evaluate/metrics/glue/glue.py", args.task_name)
