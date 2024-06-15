@@ -503,7 +503,7 @@ def main():
 
         if not os.path.exists(dataset_path):
             # Downloading and loading a dataset from the hub.
-            if data_args.task_name in ["rte","stsb","mrpc"]:
+            if data_args.task_name in ["rte","stsb","mrpc","cola"]:
                 raw_datasets = load_dataset("glue", data_args.task_name)
             else:
                 raw_datasets = load_dataset("aps/super_glue", data_args.task_name)
@@ -885,7 +885,7 @@ def main():
 
     # Load or save metric
     # Get the metric function
-    if data_args.task_name not in ["rte","mrpc","stsb"]:
+    if data_args.task_name not in ["rte","mrpc","stsb","cola"]:
         metric = evaluate.load("./downloads/evaluate/metrics/super_glue/super_glue.py", data_args.task_name)
     else:
         metric = evaluate.load("./downloads/evaluate/metrics/glue/glue.py", data_args.task_name)    # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a

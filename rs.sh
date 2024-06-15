@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the array of TASK_NAMEs
-TASK_NAMES=("boolq")  # Modify this array with your actual task names
+TASK_NAMES=("cola")  # Modify this array with your actual task names
 
 MODEL_TYPE="distilbert/distilbert-base-uncased"
 

@@ -227,13 +227,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
-    # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    send_example_telemetry("run_glue_no_trainer", args)
 
-    # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
-    # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
-    # in the environment
     accelerator = (
         Accelerator(log_with=args.report_to, project_dir=args.output_dir) if args.with_tracking else Accelerator()
     )
@@ -292,7 +286,7 @@ def main():
     ''' CHANGE THESE LINES '''
     if args.task_name is not None:
         # Downloading and loading a dataset from the hub.
-        if (args.task_name in ["rte","stsb","mrpc","cola"]):
+        if (args.task_name in ["rte","stsb","mrpc"]):
             raw_datasets = load_dataset("glue", args.task_name)
 
         else:
@@ -361,7 +355,7 @@ def main():
     print(f"Non label column names",non_label_column_names)
 
     
-    ''' 
+     
     my_model = copy.deepcopy(model)
     
     module_trained_for = 100
@@ -381,8 +375,8 @@ def main():
         ffn.load_state_dict(torch.load(module_path))
         my_model.distilbert.transformer.layer[i].ffn = ffn
     
-    model = my_model 
-    '''
+    #model = my_model 
+    
     # Preprocessing the datasets
     if args.task_name is not None:
         sentence1_key, sentence2_key, sentence3_key = task_to_keys[args.task_name]
@@ -627,7 +621,7 @@ def main():
     
     if args.task_name is not None:
             
-        if(args.task_name in ["rte","stsb","mrpc","cola"]):
+        if(args.task_name in ["rte","stsb","mrpc"]):
             metric = load("glue",args.task_name)
         else:
             metric = load("super_glue",args.task_name)

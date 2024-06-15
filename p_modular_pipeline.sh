@@ -56,10 +56,10 @@ if [ "$do_modular_train_sa" = "y" ] && [ "$do_modular_train_bl" = "y" ]; then
     echo "Encoder compression: $encoder_compression"
 
     # Use seq to generate encoder indices and pass each index to parallel
-    seq 0 5 | parallel -j 5 'echo "Processing encoder index {}"; \
+    seq 0 5 | parallel -j 1 'echo "Processing encoder index {}"; \
         unset CUDA_VISIBLE_DEVICES; \
         export encoder_idx={}; \
-        parallel -j 2 -u ::: \
+        parallel -j 2 ::: \
             "echo \"Modular training for SA module, encoder $encoder_idx\"; python3 mha_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed" \
             "echo \"Modular training for BL module, encoder $encoder_idx\"; python3 ffn_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"'
 fi

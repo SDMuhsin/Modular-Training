@@ -400,7 +400,7 @@ def main():
 
         if not os.path.exists(dataset_path):
             # Downloading and loading a dataset from the hub.
-            if args.task_name == "rte":
+            if args.task_name in ["rte","stsb","mrpc","cola"]:
                 raw_datasets = load_dataset("glue", args.task_name)
             else:
                 raw_datasets = load_dataset("aps/super_glue", args.task_name)
@@ -784,7 +784,7 @@ def main():
         accelerator.init_trackers("glue_no_trainer", experiment_config)
 
     # Get the metric function
-    if args.task_name not in ["rte","mrpc","stsb"]:
+    if args.task_name not in ["rte","mrpc","stsb","cola"]:
         metric = evaluate.load("./downloads/evaluate/metrics/super_glue/super_glue.py", args.task_name)
     else:
         metric = evaluate.load("./downloads/evaluate/metrics/glue/glue.py", args.task_name)
