@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the array of TASK_NAMEs
-TASK_NAMES=("cola")  # Modify this array with your actual task names
+TASK_NAMES=("cb")  # Modify this array with your actual task names
 
 MODEL_TYPE="distilbert/distilbert-base-uncased"
 
@@ -9,13 +9,12 @@ MODEL_TYPE="distilbert/distilbert-base-uncased"
 export MODEL_TYPE
 
 # Use GNU Parallel to run tasks directly
-parallel -j 3 'python3 run_superglue_no_trainer.py \
+parallel -j 1 -u 'python3 run_speed.py \
   --model_name_or_path $MODEL_TYPE \
   --task_name {} \
   --per_device_train_batch_size 32 \
   --learning_rate 2e-5 \
   --num_train_epochs 18 \
   --output_dir ./tmp/{} \
-  --random_seed 42 \
   --seed 42' ::: "${TASK_NAMES[@]}"
 

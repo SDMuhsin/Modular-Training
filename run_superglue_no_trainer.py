@@ -22,7 +22,7 @@ import math
 import os
 import random
 from pathlib import Path
-
+import numpy as np
 import datasets
 import evaluate
 import torch
@@ -205,6 +205,13 @@ def parse_args():
         "--ignore_mismatched_sizes",
         action="store_true",
         help="Whether or not to enable to load a pretrained model whose head dimensions are different.",
+    
+    )
+
+    parser.add_argument(
+        "--random_seed",
+        type=int,
+        default=42
     )
     args = parser.parse_args()
 
@@ -224,13 +231,22 @@ def parse_args():
 
     return args
 
+save_dir = "./downloads"
 
 def main():
     args = parse_args()
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    send_example_telemetry("run_glue_no_trainer", args)
-
+    config_path = os.path.join(save_dir, f"{args.task_name}_config")
+    tokenizer_path = os.path.join(save_dir, f"{args.task_name}_tokenizer")
+    model_path = os.path.join(save_dir, f"{args.task_name}_model")
+    random.seed(args.random_seed)
+    np.random.seed(args.random_seed)
+    torch.manual_seed(args.random_seed)
+    torch.cuda.manual_seed_all(args.random_seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ['PYTHONHASHSEED'] = str(args.random_seed)
     # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
     # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
     # in the environment
@@ -337,25 +353,51 @@ def main():
     #
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
-    config = AutoConfig.from_pretrained(
-        args.model_name_or_path,
-        num_labels=num_labels,
-        finetuning_task=args.task_name,
-        trust_remote_code=args.trust_remote_code,
-    )
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model_name_or_path, use_fast=not args.use_slow_tokenizer, trust_remote_code=args.trust_remote_code
-    )
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    config.pad_token_id = tokenizer.pad_token_id
-    model = AutoModelForSequenceClassification.from_pretrained(
-        args.model_name_or_path,
-        from_tf=bool(".ckpt" in args.model_name_or_path),
-        config=config,
-        ignore_mismatched_sizes=args.ignore_mismatched_sizes,
-        trust_remote_code=args.trust_remote_code,
-    )
+
+    if not os.path.exists(config_path):
+        config = AutoConfig.from_pretrained(
+            args.model_name_or_path,
+            num_labels=num_labels,
+            finetuning_task=args.task_name,
+            cache_dir=args.cache_dir,
+            revision=args.model_revision,
+            token=args.token,
+            trust_remote_code=args.trust_remote_code,
+        )
+        config.save_pretrained(config_path)
+    else:
+        print("LOAD FROM SAVE")
+        config = AutoConfig.from_pretrained(config_path)
+
+    # Load or save tokenizer
+    if not os.path.exists(tokenizer_path):
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model_name_or_path,
+            cache_dir=args.cache_dir,
+            use_fast=args.use_fast_tokenizer,
+            revision=args.model_revision,
+            token=args.token,
+            trust_remote_code=args.trust_remote_code,
+        )
+        tokenizer.save_pretrained(tokenizer_path)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+
+    # Load or save model
+    if not os.path.exists(model_path):
+        model = AutoModelForSequenceClassification.from_pretrained(
+            args.model_name_or_path,
+            from_tf=bool(".ckpt" in args.model_name_or_path),
+            config=config,
+            cache_dir=args.cache_dir,
+            revision=args.model_revision,
+            token=args.token,
+            trust_remote_code=args.trust_remote_code,
+            ignore_mismatched_sizes=args.ignore_mismatched_sizes,
+        )
+        model.save_pretrained(model_path)
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(model_path)
    
     non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
     print(f"Non label column names",non_label_column_names)

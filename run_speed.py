@@ -25,6 +25,8 @@ from pathlib import Path
 
 import datasets
 import evaluate
+import numpy as np
+import time
 import torch
 from accelerate import Accelerator
 from accelerate.logging import get_logger
@@ -270,18 +272,6 @@ def main():
             os.makedirs(args.output_dir, exist_ok=True)
     accelerator.wait_for_everyone()
 
-    # Get the datasets: you can either provide your own CSV/JSON training and evaluation files (see below)
-    # or specify a GLUE benchmark task (the dataset will be downloaded automatically from the datasets Hub).
-
-    # For CSV/JSON files, this script will use as labels the column called 'label' and as pair of sentences the
-    # sentences in columns called 'sentence1' and 'sentence2' if such column exists or the first two columns not named
-    # label if at least two columns are provided.
-
-    # If the CSVs/JSONs contain only one non-label column, the script does single sentence classification on this
-    # single column. You can easily tweak this behavior (see below)
-
-    # In distributed training, the load_dataset function guarantee that only one local process can concurrently
-    # download the dataset.
     
     ''' CHANGE THESE LINES '''
     if args.task_name is not None:
@@ -321,12 +311,7 @@ def main():
             label_list = raw_datasets["train"].unique("label")
             label_list.sort()  # Let's sort it for determinism
             num_labels = len(label_list)
-    print(raw_datasets['train']) 
-    print(f"Labels : ",num_labels)
-    print(set(raw_datasets['train']['label']))
-    print(set(raw_datasets['validation']['label']))
     
-    print(set(raw_datasets['test']['label']))
     # Load pretrained model and tokenizer
     #
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
@@ -354,6 +339,36 @@ def main():
     non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
     print(f"Non label column names",non_label_column_names)
 
+   
+    model.cpu()  # Move model to GPU
+
+    # Benchmarking
+    num_runs = 100
+    input_length = 128  # Example input length
+    times = []
+    batch_size = 32
+    num_batches = num_runs
+    for i in range(num_batches):
+        print(f"{i}/{num_batches}",end="\r")
+        # Generate batch of random inputs
+        batch_input = tokenizer(
+            [" ".join(np.random.choice(["example", "text", "words", "for", "testing"], size=input_length)) for _ in range(batch_size)],
+            return_tensors="pt",
+            padding="max_length",
+            max_length=input_length,
+            truncation=True
+        )
+        batch_input = batch_input.to('cpu')  # Move batch to GPU
+
+        # Timing inference
+        start_time = time.time()
+        with torch.no_grad():
+            outputs = model(**batch_input)
+        elapsed = time.time() - start_time
+        times.append(elapsed)
+   
+    average_time = sum(times) / len(times)
+    print(f"\n\n\nAverage inference time: {average_time:.4f} seconds\n\n\n\n")
     
      
     my_model = copy.deepcopy(model)
@@ -366,17 +381,46 @@ def main():
         module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
         mha = MultiHeadSelfAttentionLowRank(config,compression=2)
 
-        mha.load_state_dict(torch.load(module_path))
+        #mha.load_state_dict(torch.load(module_path))
         my_model.distilbert.transformer.layer[i].attention = mha
         
         
         module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
         ffn = FFNLowRank(config,compression=2)
-        ffn.load_state_dict(torch.load(module_path))
+        #ffn.load_state_dict(torch.load(module_path))
         my_model.distilbert.transformer.layer[i].ffn = ffn
     
-    #model = my_model 
+    model = my_model 
     
+    times = []
+    model.cpu()
+    model.eval()
+    for i in range(num_batches):
+        
+        print(f"{i}/{num_batches}",end="\r")
+
+        # Generate batch of random inputs
+        batch_input = tokenizer(
+            [" ".join(np.random.choice(["example", "text", "words", "for", "testing"], size=input_length)) for _ in range(batch_size)],
+            return_tensors="pt",
+            padding="max_length",
+            max_length=input_length,
+            truncation=True
+        )
+        batch_input = batch_input.to('cpu')  # Move batch to GPU
+
+        # Timing inference
+        start_time = time.time()
+        with torch.no_grad():
+            outputs = model(**batch_input)
+        elapsed = time.time() - start_time
+        times.append(elapsed)
+   
+    average_time = sum(times) / len(times)
+    average_time = sum(times) / len(times)
+    print(f"\n\n\n [Compressed] Average inference time: {average_time:.4f} seconds\n\n\n\n")
+   
+    exit()
     # Preprocessing the datasets
     if args.task_name is not None:
         sentence1_key, sentence2_key, sentence3_key = task_to_keys[args.task_name]
@@ -772,52 +816,6 @@ def main():
             print(f"Directory '{directory}' created successfully.")
         else:
             print(f"Directory '{directory}' already exists.")
-    baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}"
-    create_directory_if_not_exists(baseline_model_dir)
-    torch.save(model.state_dict(),f"{baseline_model_dir}/baseline_model.pth")
-    if args.output_dir is not None:
-        accelerator.wait_for_everyone()
-        unwrapped_model = accelerator.unwrap_model(model)
-        unwrapped_model.save_pretrained(
-            args.output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
-        )
-        if accelerator.is_main_process:
-            tokenizer.save_pretrained(args.output_dir)
-            if args.push_to_hub:
-                api.upload_folder(
-                    commit_message="End of training",
-                    folder_path=args.output_dir,
-                    repo_id=repo_id,
-                    repo_type="model",
-                    token=args.hub_token,
-                )
-
-    if args.task_name == "mnli":
-        # Final evaluation on mismatched validation set
-        eval_dataset = processed_datasets["validation_mismatched"]
-        eval_dataloader = DataLoader(
-            eval_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size
-        )
-        eval_dataloader = accelerator.prepare(eval_dataloader)
-
-        model.eval()
-        for step, batch in enumerate(eval_dataloader):
-            outputs = model(**batch)
-            predictions = outputs.logits.argmax(dim=-1)
-            
-            metric.add_batch(
-                predictions=accelerator.gather(predictions),
-                references=accelerator.gather(batch["labels"]),
-            )
-
-        eval_metric = metric.compute()
-        logger.info(f"mnli-mm: {eval_metric}")
-
-    if args.output_dir is not None:
-        all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
-        with open(os.path.join(args.output_dir, "all_results.json"), "w") as f:
-            json.dump(global_results, f)
-
-
+    
 if __name__ == "__main__":
     main()
