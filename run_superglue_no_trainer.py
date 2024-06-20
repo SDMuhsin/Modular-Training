@@ -403,7 +403,7 @@ def main():
     print(f"Non label column names",non_label_column_names)
 
     
-    ''' 
+    
     my_model = copy.deepcopy(model)
     
     module_trained_for = 100
@@ -414,17 +414,17 @@ def main():
         module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
         mha = MultiHeadSelfAttentionLowRank(config,compression=2)
 
-        mha.load_state_dict(torch.load(module_path))
+        #mha.load_state_dict(torch.load(module_path))
         my_model.distilbert.transformer.layer[i].attention = mha
         
         
         module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
         ffn = FFNLowRank(config,compression=2)
-        ffn.load_state_dict(torch.load(module_path))
+        #ffn.load_state_dict(torch.load(module_path))
         my_model.distilbert.transformer.layer[i].ffn = ffn
     
     model = my_model 
-    '''
+    
     # Preprocessing the datasets
     if args.task_name is not None:
         sentence1_key, sentence2_key, sentence3_key = task_to_keys[args.task_name]
@@ -776,7 +776,7 @@ def main():
                  references=references
             )  
         eval_metric = metric.compute()        
-        logger.info(f"[EVAL] epoch {epoch}: {eval_metric}")
+        logger.info(f"[{args.task_name}][EVAL] epoch {epoch}: {eval_metric}")
         global_results[str(epoch)] = eval_metric
         if args.with_tracking:
             accelerator.log(

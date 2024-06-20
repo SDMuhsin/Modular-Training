@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the array of TASK_NAMEs
-TASK_NAMES=("cola")  # Modify this array with your actual task names
+TASK_NAMES=( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )  # Modify this array with your actual task names
 
 MODEL_TYPE="distilbert/distilbert-base-uncased"
 
@@ -17,5 +17,5 @@ parallel -j 3 'python3 run_superglue_no_trainer.py \
   --num_train_epochs 18 \
   --output_dir ./tmp/{} \
   --random_seed 42 \
-  --seed 42' ::: "${TASK_NAMES[@]}"
+  --seed 42' ::: "${TASK_NAMES[@]}" > nores.txt
 

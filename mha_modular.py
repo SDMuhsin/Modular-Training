@@ -49,6 +49,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from transformers import BertForSequenceClassification, AutoConfig
 from low_rank_modules.distilbert import MultiHeadSelfAttentionLowRank 
+import psutil
 
 check_min_version("4.41.0.dev0")
 
@@ -84,6 +85,9 @@ Average runtime for shared module: 0.033481 seconds
 
 '''
 
+def print_memory_usage():
+    process = psutil.Process(os.getpid())
+    print(f"Memory Usage: {process.memory_info().rss / (1024 * 1024)} MB")  # RSS memory in MB
 #python3 isolated_sa.py --encoder_idx=0 --model_name=google-bert/bert-base-uncased --name=test --num_labels=2 --epochs=50
 
 import argparse
@@ -266,7 +270,8 @@ def main():
     
     print("Batch count : ",batch_count)
     for epoch in range(0,num_epochs):
-        
+
+        print_memory_usage()        
         total_loss = 0
         noisy_loss = 0
 

@@ -346,7 +346,7 @@ def main():
     num_runs = 100
     input_length = 128  # Example input length
     times = []
-    batch_size = 32
+    batch_size = 128
     num_batches = num_runs
     for i in range(num_batches):
         print(f"{i}/{num_batches}",end="\r")
