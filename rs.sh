@@ -3,13 +3,13 @@
 # Define the array of TASK_NAMEs
 TASK_NAMES=( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )  # Modify this array with your actual task names
 
-MODEL_TYPE="distilbert/distilbert-base-uncased"
+MODEL_TYPE="bert-base-uncased"
 
 # Export MODEL_TYPE to make it available to parallel sub-shells
 export MODEL_TYPE
 
 # Use GNU Parallel to run tasks directly
-parallel -j 3 'python3 run_superglue_no_trainer.py \
+parallel -j 4 'python3 run_superglue_no_trainer.py \
   --model_name_or_path $MODEL_TYPE \
   --task_name {} \
   --per_device_train_batch_size 32 \

@@ -8,7 +8,6 @@ Labels :  2
 {-1}
 LOAD FROM SAVE
 Non label column names ['premise', 'choice1', 'choice2', 'question', 'idx']
-Directory './saves/models/baseline/distilbert/distilbert-base-uncased/copa' already exists.
 Dataset({
     features: ['premise', 'hypothesis', 'idx', 'label'],
     num_rows: 250
@@ -19,7 +18,6 @@ Labels :  3
 {-1}
 LOAD FROM SAVE
 Non label column names ['premise', 'hypothesis', 'idx']
-Directory './saves/models/baseline/distilbert/distilbert-base-uncased/cb' already exists.
 Dataset({
     features: ['text', 'span1_index', 'span2_index', 'span1_text', 'span2_text', 'idx', 'label'],
     num_rows: 554
@@ -30,7 +28,6 @@ Labels :  2
 {-1}
 LOAD FROM SAVE
 Non label column names ['text', 'span1_index', 'span2_index', 'span1_text', 'span2_text', 'idx']
-Directory './saves/models/baseline/distilbert/distilbert-base-uncased/wsc' already exists.
 Dataset({
     features: ['sentence', 'label', 'idx'],
     num_rows: 8551
@@ -41,29 +38,6 @@ Labels :  2
 {-1}
 LOAD FROM SAVE
 Non label column names ['sentence', 'idx']
-Directory './saves/models/baseline/distilbert/distilbert-base-uncased/cola' already exists.
-Dataset({
-    features: ['word', 'sentence1', 'sentence2', 'start1', 'start2', 'end1', 'end2', 'idx', 'label'],
-    num_rows: 5428
-})
-Labels :  2
-{0, 1}
-{0, 1}
-{-1}
-LOAD FROM SAVE
-Non label column names ['word', 'sentence1', 'sentence2', 'start1', 'start2', 'end1', 'end2', 'idx']
-Directory './saves/models/baseline/distilbert/distilbert-base-uncased/wic' already exists.
-Dataset({
-    features: ['sentence1', 'sentence2', 'label', 'idx'],
-    num_rows: 2490
-})
-Labels :  2
-{0, 1}
-{0, 1}
-{-1}
-LOAD FROM SAVE
-Non label column names ['sentence1', 'sentence2', 'idx']
-Directory './saves/models/baseline/distilbert/distilbert-base-uncased/rte' already exists.
 Dataset({
     features: ['sentence1', 'sentence2', 'label', 'idx'],
     num_rows: 5749
@@ -74,7 +48,26 @@ Labels :  1
 {-1.0}
 LOAD FROM SAVE
 Non label column names ['sentence1', 'sentence2', 'idx']
-Directory './saves/models/baseline/distilbert/distilbert-base-uncased/stsb' already exists.
+Dataset({
+    features: ['word', 'sentence1', 'sentence2', 'start1', 'start2', 'end1', 'end2', 'idx', 'label'],
+    num_rows: 5428
+})
+Labels :  2
+{0, 1}
+{0, 1}
+{-1}
+LOAD FROM SAVE
+Non label column names ['word', 'sentence1', 'sentence2', 'start1', 'start2', 'end1', 'end2', 'idx']
+Dataset({
+    features: ['sentence1', 'sentence2', 'label', 'idx'],
+    num_rows: 2490
+})
+Labels :  2
+{0, 1}
+{0, 1}
+{-1}
+LOAD FROM SAVE
+Non label column names ['sentence1', 'sentence2', 'idx']
 Dataset({
     features: ['sentence1', 'sentence2', 'label', 'idx'],
     num_rows: 3668
@@ -85,7 +78,6 @@ Labels :  2
 {0, 1}
 LOAD FROM SAVE
 Non label column names ['sentence1', 'sentence2', 'idx']
-Directory './saves/models/baseline/distilbert/distilbert-base-uncased/mrpc' already exists.
 Dataset({
     features: ['question', 'passage', 'idx', 'label'],
     num_rows: 9427
@@ -96,4 +88,3 @@ Labels :  2
 {-1}
 LOAD FROM SAVE
 Non label column names ['question', 'passage', 'idx']
-Directory './saves/models/baseline/distilbert/distilbert-base-uncased/boolq' already exists.

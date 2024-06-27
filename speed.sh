@@ -3,7 +3,7 @@
 # Define the array of TASK_NAMEs
 TASK_NAMES=("cb")  # Modify this array with your actual task names
 
-MODEL_TYPE="distilbert/distilbert-base-uncased"
+MODEL_TYPE="bert-base-uncased"
 
 # Export MODEL_TYPE to make it available to parallel sub-shells
 export MODEL_TYPE

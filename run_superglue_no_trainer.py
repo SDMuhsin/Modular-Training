@@ -403,7 +403,7 @@ def main():
     print(f"Non label column names",non_label_column_names)
 
     
-    
+    ''' 
     my_model = copy.deepcopy(model)
     
     module_trained_for = 100
@@ -423,8 +423,9 @@ def main():
         #ffn.load_state_dict(torch.load(module_path))
         my_model.distilbert.transformer.layer[i].ffn = ffn
     
-    model = my_model 
-    
+    #model = my_model 
+    '''
+
     # Preprocessing the datasets
     if args.task_name is not None:
         sentence1_key, sentence2_key, sentence3_key = task_to_keys[args.task_name]
@@ -820,9 +821,9 @@ def main():
             print(f"Directory '{directory}' created successfully.")
         else:
             print(f"Directory '{directory}' already exists.")
-    baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}"
-    create_directory_if_not_exists(baseline_model_dir)
-    torch.save(model.state_dict(),f"{baseline_model_dir}/baseline_model.pth")
+    #baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}"
+    #create_directory_if_not_exists(baseline_model_dir)
+    #torch.save(model.state_dict(),f"{baseline_model_dir}/baseline_model.pth")
     if args.output_dir is not None:
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(model)
@@ -863,7 +864,7 @@ def main():
 
     if args.output_dir is not None:
         all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
-        with open(os.path.join(args.output_dir, "all_results.json"), "w") as f:
+        with open(os.path.join(args.output_dir, "all_results_{args.model_name_or_path}_{args.task_name}.json"), "w") as f:
             json.dump(global_results, f)
 
 
