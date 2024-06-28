@@ -256,7 +256,7 @@ def main():
     loss_fn = nn.MSELoss()
     #loss_fn_cosine = nn.CosineSimilarity(dim=1)
      
-    augment = False
+    augment = True
     pMin = 0
     pMax = 0
     pStep = (pMax-pMin)/(num_epochs)
