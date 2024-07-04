@@ -213,23 +213,11 @@ def parse_args():
         type=int,
         default=42
     )
-    
+
     parser.add_argument(
-        "--modular_job_name",
-        type=str,
-        default='NONE'
+        "--job_name",
+        type=str
     )
-    parser.add_argument(
-        "--compress",
-        type=str,
-        default='n'
-    )
-    parser.add_argument(
-        "--modular",
-        type=str,
-        default='n'
-    )
-    
     args = parser.parse_args()
 
     # Sanity checks
@@ -249,12 +237,7 @@ def parse_args():
     return args
 
 save_dir = "./downloads"
-def create_directory_if_not_exists(directory):
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-        print(f"Directory '{directory}' created successfully.")
-    else:
-        print(f"Directory '{directory}' already exists.")
+
 def main():
     args = parse_args()
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
@@ -420,63 +403,33 @@ def main():
         model.save_pretrained(model_path)
     else:
         model = AutoModelForSequenceClassification.from_pretrained(model_path)
-  
-    '''
-        Compress
-    '''
-
-    if(args.compress == 'y'):
-        my_model = copy.deepcopy(model)
-        module_trained_for = 200
-        for i in range(6):
-            
-            module_path = f"./saves/{args.model_name_or_path}/{args.modular_job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
-            mha = MultiHeadSelfAttentionLowRank(config,compression=2)
-            
-            if(args.modular == 'y'):
-                mha.load_state_dict(torch.load(module_path))
-            
-            my_model.distilbert.transformer.layer[i].attention = mha
-            
-            
-            module_path = f"./saves/{args.model_name_or_path}/{args.modular_job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
-            ffn = FFNLowRank(config,compression=2)
-            
-            if( args.modular == 'y'):
-                ffn.load_state_dict(torch.load(module_path))
-
-            my_model.distilbert.transformer.layer[i].ffn = ffn
-    
-        model = my_model 
-    
+   
     non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
     print(f"Non label column names",non_label_column_names)
 
-    loss_save_folder = f"./saves/models/loss_landscape/{args.model_name_or_path}/{args.task_name}"
-    create_directory_if_not_exists(loss_save_folder)
-        
-    '''
+    
+     
     my_model = copy.deepcopy(model)
     
-    module_trained_for = 100
+    module_trained_for = 200
     
-    args.job_name = "cbAblation"
+    #args.job_name = "cbAblation"
     for i in range(6):
         
         module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
         mha = MultiHeadSelfAttentionLowRank(config,compression=2)
 
-        #mha.load_state_dict(torch.load(module_path))
+        mha.load_state_dict(torch.load(module_path))
         my_model.distilbert.transformer.layer[i].attention = mha
         
         
         module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
         ffn = FFNLowRank(config,compression=2)
-        #ffn.load_state_dict(torch.load(module_path))
+        ffn.load_state_dict(torch.load(module_path))
         my_model.distilbert.transformer.layer[i].ffn = ffn
     
-    #model = my_model 
-   ''' 
+    model = my_model 
+    
 
     # Preprocessing the datasets
     if args.task_name is not None:
@@ -775,29 +728,10 @@ def main():
     progress_bar.update(completed_steps)
     
     global_results = {}
-    global_train_results = {}
-
-    if(args.compress == 'y' and args.modular == 'y'):
-        args.num_train_epochs = 18
-        save_name = "e0_compressed_modular"
-        torch.save(model.state_dict(),f"{loss_save_folder}/{save_name}.pth")
-    elif(args.compress == 'y'):
-        torch.save(model.state_dict(),f"{loss_save_folder}/e0_compressed.pth")
-
-    args.with_tracking = True
-
-    lowest_loss = 10000
-    lowest_loss_epoch = 0
-    lowest_model_save_name = 'best_model'
-    lowest_model_save_name += '_compressed' if args.compress == 'y' else ''
-    lowest_model_save_name += '_modular' if args.modular == 'y' else ''
-
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
         if args.with_tracking:
             total_loss = 0
-            total_steps = 0
-
         if args.resume_from_checkpoint and epoch == starting_epoch and resume_step is not None:
             # We skip the first `n` batches in the dataloader when resuming from a checkpoint
             active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
@@ -809,8 +743,6 @@ def main():
             # We keep track of the loss at each epoch
             if args.with_tracking:
                 total_loss += loss.detach().float()
-                total_steps += 1
-
             loss = loss / args.gradient_accumulation_steps
             accelerator.backward(loss)
             if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
@@ -829,36 +761,14 @@ def main():
 
             if completed_steps >= args.max_train_steps:
                 break
-        
-        average_train_loss = total_loss / total_steps
-        logger.info(f"[{args.task_name}][TRAIN] epoch {epoch}: Average Loss: {average_train_loss}")
-        global_train_results[str(epoch)] = {"average_loss": average_train_loss.item()} 
-        
-        if(epoch == 200):
-            save_name = f"e200"
-            save_name += '_compressed' if args.compress == 'y' else ''
-            torch.save(model.state_dict(),f"{loss_save_folder}/{save_name}.pth")
-        
-        
+
         model.eval()
         samples_seen = 0
-        eval_total_loss = 0.0
-        eval_total_steps = 0
-        samples_seen = 0 
-        
         for step, batch in enumerate(eval_dataloader):
             with torch.no_grad():
                 outputs = model(**batch)
-            
-            loss = outputs.loss
-            eval_total_loss += loss.detach().item()
-            eval_total_steps += 1
-
             predictions = outputs.logits.argmax(dim=-1) if not is_regression else outputs.logits.squeeze()
             predictions, references = accelerator.gather((predictions, batch["labels"]))
-            
-            
-            
             # If we are in a multiprocess environment, the last batch has duplicates
             if accelerator.num_processes > 1:
                 if step == len(eval_dataloader) - 1:
@@ -871,20 +781,9 @@ def main():
                  predictions=predictions,
                  references=references
             )  
-
-        
         eval_metric = metric.compute()        
-        eval_loss = eval_total_loss / eval_total_steps
-        logger.info(f"[{args.task_name}][EVAL] epoch {epoch}: {eval_metric}, Loss: {eval_loss}")
+        logger.info(f"[{args.task_name}][EVAL] epoch {epoch}: {eval_metric}")
         global_results[str(epoch)] = eval_metric
-        global_results[str(epoch)]["loss"] = eval_loss 
-        
-        if(eval_loss < lowest_loss):
-            
-            lowest_loss = eval_loss
-            lowest_loss_epoch = epoch
-            torch.save(model.state_dict(), f"{loss_save_folder}/{lowest_model_save_name}.pth" )
-
         if args.with_tracking:
             accelerator.log(
                 {
@@ -895,8 +794,6 @@ def main():
                 },
                 step=completed_steps,
             )
-
-
 
         if args.push_to_hub and epoch < args.num_train_epochs - 1:
             accelerator.wait_for_everyone()
@@ -923,7 +820,12 @@ def main():
     if args.with_tracking:
         accelerator.end_training()
     
-    
+    def create_directory_if_not_exists(directory):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+            print(f"Directory '{directory}' created successfully.")
+        else:
+            print(f"Directory '{directory}' already exists.")
     #baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}"
     #create_directory_if_not_exists(baseline_model_dir)
     #torch.save(model.state_dict(),f"{baseline_model_dir}/baseline_model.pth")
@@ -965,34 +867,11 @@ def main():
         eval_metric = metric.compute()
         logger.info(f"mnli-mm: {eval_metric}")
 
-        
-    all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
-    save_name = "218_res"
-    save_name += "_compressed" if args.compress == 'y' else ''
-    save_name += "_modular" if args.modular == 'y' else ''
+    if args.output_dir is not None:
+        all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
+        with open(os.path.join(args.output_dir, f"mod{args.model_name_or_path.split('/')[-1]}_all_results_{args.task_name}_{args.random_seed}.json"), "w") as f:
+            json.dump(global_results, f)
 
-
-
-    train_results = {f"train_{k}": v for k, v in global_train_results.items()}
-    train_save_name = "TRAIN_RES"
-    train_save_name += "_compressed" if args.compress == 'y' else ''
-    train_save_name += "_modular" if args.modular == 'y' else ''
-    
-    with open(f"./saves/res/TRAIN_{train_save_name}_distilbert_{args.task_name}.json", "w") as f:
-        json.dump(train_results,f)
-
-    with open(f"./saves/res/EVAL_{save_name}_distilbert_{args.task_name}.json", "w") as f:
-
-        json.dump(global_results, f)
-
-        
-
-
-    save_name = "e217"
-    save_name += "_compressed" if args.compress == 'y' else ''
-    save_name += "_modular" if args.modular == 'y' else ''
-
-    torch.save(model.state_dict(),f"{loss_save_folder}/{save_name}.pth")
 
 if __name__ == "__main__":
     main()

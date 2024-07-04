@@ -1,9 +1,9 @@
 module load python/3.11.5
 python3 -m venv torch_sayed
 # Activate venv
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+python3 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 module load arrow/16.1.0
-pip3 install nltk nlpaug numpy pandas
+python3 -m pip install nltk nlpaug numpy pandas
 scp -r ./downloads sdmuhsin@beluga.alliancecan.ca://home/sdmuhsin/scratch/sdmuhsin/transformers/modular-training-super-glue
 scp -r ../transformers sdmuhsin@beluga.alliancecan.ca://home/sdmuhsin/scratch/sdmuhsin/transformers/
 scp -r ./glove-embeddings sdmuhsin@beluga.alliancecan.ca://home/sdmuhsin/scratch/sdmuhsin/transformers/modular-training-super-glue

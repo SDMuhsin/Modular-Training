@@ -9,7 +9,7 @@ MODEL_TYPE="distilbert/distilbert-base-uncased"
 export MODEL_TYPE
 
 # Use GNU Parallel to run tasks directly
-parallel -j 1 -u 'python3 viz_loss_landscape.py \
+parallel -j 1 -u 'python3 viz2d_loss_landscape.py \
   --model_name_or_path $MODEL_TYPE \
   --task_name {} \
   --per_device_train_batch_size 32 \
@@ -17,5 +17,8 @@ parallel -j 1 -u 'python3 viz_loss_landscape.py \
   --num_train_epochs 218 \
   --output_dir ./tmp/{} \
   --random_seed 42 \
-  --seed 42' ::: "${TASK_NAMES[@]}" > nores.txt
+  --compress y \
+  --modular y \
+  --modular_job_name cbLandScapeM200 \
+  --seed 42' ::: "${TASK_NAMES[@]}" 
 

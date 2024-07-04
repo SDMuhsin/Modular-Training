@@ -215,6 +215,24 @@ def parse_args():
         type=int,
         default=42
     )
+    
+
+    parser.add_argument(
+        "--modular_job_name",
+        type=str,
+        default='NONE'
+    )
+    parser.add_argument(
+        "--compress",
+        type=str,
+        default='n'
+    )
+    parser.add_argument(
+        "--modular",
+        type=str,
+        default='n'
+    )
+    
     args = parser.parse_args()
 
     # Sanity checks
@@ -405,12 +423,37 @@ def main():
         model.save_pretrained(model_path)
     else:
         model = AutoModelForSequenceClassification.from_pretrained(model_path)
-   
+    
+    if(args.compress == 'y'):
+        my_model = copy.deepcopy(model)
+        module_trained_for = 200
+        for i in range(6):
+            
+            module_path = f"./saves/{args.model_name_or_path}/{args.modular_job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
+            mha = MultiHeadSelfAttentionLowRank(config,compression=2)
+            
+            if(args.modular == 'y'):
+                mha.load_state_dict(torch.load(module_path))
+            
+            my_model.distilbert.transformer.layer[i].attention = mha
+            
+            
+            module_path = f"./saves/{args.model_name_or_path}/{args.modular_job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
+            ffn = FFNLowRank(config,compression=2)
+            
+            if( args.modular == 'y'):
+                ffn.load_state_dict(torch.load(module_path))
+
+            my_model.distilbert.transformer.layer[i].ffn = ffn
+    
+        model = my_model 
+
+    
+
     non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
     print(f"Non label column names",non_label_column_names)
 
     loss_save_folder = f"./saves/models/loss_landscape/{args.model_name_or_path}/{args.task_name}"
-    create_directory_if_not_exists(loss_save_folder)
         
 
     # Preprocessing the datasets
@@ -690,8 +733,12 @@ def main():
 
     # Load state
 
-    model200.load_state_dict( torch.load(f"{loss_save_folder}/e200.pth") )
-    model217.load_state_dict( torch.load(f"{loss_save_folder}/e217.pth") )
+    sufix = ''
+    sufix += '_compressed' if args.compress == 'y' else ''
+    sufix += '_modular' if args.modular == 'y' else ''
+
+    model200.load_state_dict( torch.load(f"{loss_save_folder}/e0_compressed_modular.pth") )
+    model217.load_state_dict( torch.load(f"{loss_save_folder}/best_model_compressed_modular.pth") )
 
     def interpolate_model(model1, model2, alpha):
         model_interp = copy.deepcopy(model1)
@@ -728,7 +775,7 @@ def main():
     plt.ylabel('Average Loss')
     plt.grid(True)
     plt.show()
-    plt.savefig("loss.png")
+    plt.savefig("loss_compressed_modular.png")
     exit()
 
     # Train!
@@ -778,6 +825,12 @@ def main():
     progress_bar.update(completed_steps)
     
     global_results = {}
+
+    ''' Change num train steps depending on use case '''
+    if(args.modular == 'y'):
+        args.num_train_epochs = 18
+    
+    
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
         if args.with_tracking:
@@ -812,7 +865,7 @@ def main():
             if completed_steps >= args.max_train_steps:
                 break
 
-
+        
         model.eval()
         samples_seen = 0
         for step, batch in enumerate(eval_dataloader):
@@ -917,8 +970,8 @@ def main():
         all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
         with open(os.path.join(args.output_dir, "218_results_{args.model_name_or_path}_{args.task_name}.json"), "w") as f:
             json.dump(global_results, f)
-
-    torch.save(model.state_dict(),f"{loss_save_folder}/e217.pth")
+    
+    
 
 if __name__ == "__main__":
     main()

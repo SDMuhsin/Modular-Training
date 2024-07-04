@@ -17,5 +17,8 @@ parallel -j 1 -u 'python3 loss_landscape_run.py \
   --num_train_epochs 218 \
   --output_dir ./tmp/{} \
   --random_seed 42 \
-  --seed 42' ::: "${TASK_NAMES[@]}" > nores.txt
+  --compress y \
+  --modular n \
+  --modular_job_name cbLandScapeM200 \
+  --seed 42' ::: "${TASK_NAMES[@]}"
 

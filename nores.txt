@@ -8,4 +8,5 @@ Labels :  3
 {-1}
 LOAD FROM SAVE
 Non label column names ['premise', 'hypothesis', 'idx']
-Directory './saves/models/loss_landscape/distilbert/distilbert-base-uncased/cb' already exists.
+Average Gradient Norm (Smoothness): 0.9257331639040944
+Flatness Measure: 0.10430839002267574

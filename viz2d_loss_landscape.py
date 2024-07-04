@@ -14,6 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Finetuning a 🤗 Transformers model for sequence classification on GLUE."""
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from numpy import gradient, linalg
 import copy
 import argparse
 import json
@@ -49,7 +52,8 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from evaluate import load
 from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank 
-
+import loss_landscapes
+import loss_landscapes.metrics
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.42.0.dev0")
 
@@ -214,6 +218,7 @@ def parse_args():
         default=42
     )
     
+
     parser.add_argument(
         "--modular_job_name",
         type=str,
@@ -255,6 +260,10 @@ def create_directory_if_not_exists(directory):
         print(f"Directory '{directory}' created successfully.")
     else:
         print(f"Directory '{directory}' already exists.")
+
+
+
+
 def main():
     args = parse_args()
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
@@ -420,11 +429,7 @@ def main():
         model.save_pretrained(model_path)
     else:
         model = AutoModelForSequenceClassification.from_pretrained(model_path)
-  
-    '''
-        Compress
-    '''
-
+    
     if(args.compress == 'y'):
         my_model = copy.deepcopy(model)
         module_trained_for = 200
@@ -448,35 +453,14 @@ def main():
             my_model.distilbert.transformer.layer[i].ffn = ffn
     
         model = my_model 
+
     
+
     non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
     print(f"Non label column names",non_label_column_names)
 
     loss_save_folder = f"./saves/models/loss_landscape/{args.model_name_or_path}/{args.task_name}"
-    create_directory_if_not_exists(loss_save_folder)
         
-    '''
-    my_model = copy.deepcopy(model)
-    
-    module_trained_for = 100
-    
-    args.job_name = "cbAblation"
-    for i in range(6):
-        
-        module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
-        mha = MultiHeadSelfAttentionLowRank(config,compression=2)
-
-        #mha.load_state_dict(torch.load(module_path))
-        my_model.distilbert.transformer.layer[i].attention = mha
-        
-        
-        module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
-        ffn = FFNLowRank(config,compression=2)
-        #ffn.load_state_dict(torch.load(module_path))
-        my_model.distilbert.transformer.layer[i].ffn = ffn
-    
-    #model = my_model 
-   ''' 
 
     # Preprocessing the datasets
     if args.task_name is not None:
@@ -727,6 +711,152 @@ def main():
         else:
             metric = load("super_glue",args.task_name)
     
+    # Extract a single batch to use for visualization
+    batch = next(iter(train_dataloader))
+    input_ids = batch['input_ids'].to(model.device)
+    attention_mask = batch['attention_mask'].to(model.device)
+    labels = batch['labels'].to(model.device)  # Make sure 'labels' is the correct key for your dataset
+
+    # You might need other inputs depending on the model architecture, such as 'token_type_ids'
+    if 'token_type_ids' in batch:
+        token_type_ids = batch['token_type_ids'].to(model.device)
+    else:
+        token_type_ids = None
+
+    # Now structure the inputs in a way expected by the model
+    inputs = {
+        'input_ids': input_ids,
+        'attention_mask': attention_mask,
+        'labels': labels
+    }
+    if token_type_ids is not None:
+        inputs['token_type_ids'] = token_type_ids
+
+    # Define the loss function directly
+    criterion = torch.nn.CrossEntropyLoss()
+    model200 = copy.deepcopy(model)
+    model217 = copy.deepcopy(model)
+
+    # Load state
+
+    sufix = ''
+    sufix += '_compressed' if args.compress == 'y' else ''
+    sufix += '_modular' if args.modular == 'y' else ''
+    model200.load_state_dict( torch.load(f"{loss_save_folder}/best_model_compressed_modular.pth") )
+    model217.load_state_dict( torch.load(f"{loss_save_folder}/e217{sufix}.pth") )
+
+    def interpolate_model(model1, model2, alpha):
+        model_interp = copy.deepcopy(model1)
+        for name, param1 in model1.named_parameters():
+            param2 = model2.state_dict()[name]
+            # Update the interpolated model's parameters
+            model_interp.state_dict()[name].copy_(param1 * (1 - alpha) + param2 * alpha)
+        return model_interp
+
+    def filter_normalize(direction):
+        """ Normalize perturbations for each filter in the direction tensor, batch-wise to avoid memory overflow. """
+        if direction.dim() == 4:  # Convolutional layers
+            norm = torch.norm(direction.view(direction.size(0), -1), dim=1, keepdim=True)
+            normalized_direction = direction / (norm + 1e-6)
+        elif direction.dim() == 2:  # Linear layers
+            norm = torch.norm(direction, dim=1, keepdim=True)
+            normalized_direction = direction / (norm + 1e-6)
+        else:  # Handle biases or other parameters
+            norm = torch.norm(direction)
+            normalized_direction = direction / (norm + 1e-6)
+        return normalized_direction
+
+    def get_random_direction(model):
+        """ Generate a random direction tensor with the same shape as the model's parameters, normalized per filter. """
+        direction = []
+        for p in model.parameters():
+            if p.requires_grad:
+                d = torch.randn_like(p)
+                d = filter_normalize(d)
+                direction.append(d)
+            else:
+                direction.append(torch.zeros_like(p))
+        return direction
+
+    def add_direction(model, directions, alpha, beta):
+        """ Add scaled directions to the model's parameters and return the modified model. """
+        new_model = copy.deepcopy(model)
+        with torch.no_grad():  # Ensures we do not accumulate gradients
+            for (name, param), d1, d2 in zip(new_model.named_parameters(), directions[0], directions[1]):
+                param.add_(alpha * d1 + beta * d2)
+        return new_model
+
+
+    base_model = model200
+
+    base_model.eval()
+
+    # Generate two orthogonal random directions
+    direction1 = get_random_direction(base_model)
+    direction2 = get_random_direction(base_model)
+
+    # Define alpha and beta ranges for the grid
+    alpha_values = np.linspace(-1, 1, 40)
+    beta_values = np.linspace(-1, 1, 40)
+    loss_grid = np.zeros((len(alpha_values), len(beta_values)))
+
+    for i, alpha in enumerate(alpha_values):
+        for j, beta in enumerate(beta_values):
+            perturbed_model = add_direction(base_model, [direction1, direction2], alpha, beta)
+            perturbed_model.eval()
+            total_loss = 0
+            count_batches = 0
+
+            for batch in eval_dataloader:
+                with torch.no_grad():
+                    outputs = perturbed_model(**batch)
+                    loss = outputs.loss
+                    total_loss += loss.item()
+                    count_batches += 1
+            
+            loss_grid[i, j] = total_loss / count_batches
+    # Compute gradients along both alpha and beta dimensions
+    grad_alpha, grad_beta = np.gradient(loss_grid, alpha_values, beta_values)
+    gradient_norm = np.sqrt(grad_alpha**2 + grad_beta**2)
+    average_gradient_norm = np.mean(gradient_norm)
+
+    print("Average Gradient Norm (Smoothness):", average_gradient_norm)
+    min_loss = np.min(loss_grid)
+    threshold = 0.05  # Define threshold as 10% above the minimum loss
+
+    # Identify where the loss is within 10% above the minimum
+    flat_regions = loss_grid <= (min_loss * (1 + threshold))
+
+    # Count the proportion of the grid that is 'flat'
+    flatness_measure = np.sum(flat_regions) / flat_regions.size
+
+    print("Flatness Measure:", flatness_measure)
+
+    # Plotting the loss landscape
+
+    fig = plt.figure(figsize=(14, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    Alpha, Beta = np.meshgrid(alpha_values, beta_values)
+    surf = ax.plot_surface(Alpha, Beta, loss_grid.T, cmap='viridis')
+
+    # Set font sizes
+    title_fontsize = 20
+    label_fontsize = 16
+    tick_fontsize = 14
+
+    ax.set_title(f"Loss Landscape of modular trained model at minima (Gradient Norm = {average_gradient_norm})", fontsize=title_fontsize)
+    ax.set_xlabel('Alpha', fontsize=label_fontsize)
+    ax.set_ylabel('Beta', fontsize=label_fontsize)
+    ax.set_zlabel('Loss', fontsize=label_fontsize)
+
+    # Set tick label size
+    ax.tick_params(axis='both', which='major', labelsize=tick_fontsize)
+
+    save_name = f"loss"
+    save_name += "_compressed" if args.compress=='y' else ''
+    save_name += "_modular" if args.modular == 'y' else ''
+    plt.savefig(f"2d_loss_modular_minima.png")
+    exit()
 
     # Train!
     total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
@@ -775,29 +905,16 @@ def main():
     progress_bar.update(completed_steps)
     
     global_results = {}
-    global_train_results = {}
 
-    if(args.compress == 'y' and args.modular == 'y'):
+    ''' Change num train steps depending on use case '''
+    if(args.modular == 'y'):
         args.num_train_epochs = 18
-        save_name = "e0_compressed_modular"
-        torch.save(model.state_dict(),f"{loss_save_folder}/{save_name}.pth")
-    elif(args.compress == 'y'):
-        torch.save(model.state_dict(),f"{loss_save_folder}/e0_compressed.pth")
-
-    args.with_tracking = True
-
-    lowest_loss = 10000
-    lowest_loss_epoch = 0
-    lowest_model_save_name = 'best_model'
-    lowest_model_save_name += '_compressed' if args.compress == 'y' else ''
-    lowest_model_save_name += '_modular' if args.modular == 'y' else ''
-
+    
+    
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
         if args.with_tracking:
             total_loss = 0
-            total_steps = 0
-
         if args.resume_from_checkpoint and epoch == starting_epoch and resume_step is not None:
             # We skip the first `n` batches in the dataloader when resuming from a checkpoint
             active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
@@ -809,8 +926,6 @@ def main():
             # We keep track of the loss at each epoch
             if args.with_tracking:
                 total_loss += loss.detach().float()
-                total_steps += 1
-
             loss = loss / args.gradient_accumulation_steps
             accelerator.backward(loss)
             if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
@@ -829,36 +944,15 @@ def main():
 
             if completed_steps >= args.max_train_steps:
                 break
-        
-        average_train_loss = total_loss / total_steps
-        logger.info(f"[{args.task_name}][TRAIN] epoch {epoch}: Average Loss: {average_train_loss}")
-        global_train_results[str(epoch)] = {"average_loss": average_train_loss.item()} 
-        
-        if(epoch == 200):
-            save_name = f"e200"
-            save_name += '_compressed' if args.compress == 'y' else ''
-            torch.save(model.state_dict(),f"{loss_save_folder}/{save_name}.pth")
-        
+
         
         model.eval()
         samples_seen = 0
-        eval_total_loss = 0.0
-        eval_total_steps = 0
-        samples_seen = 0 
-        
         for step, batch in enumerate(eval_dataloader):
             with torch.no_grad():
                 outputs = model(**batch)
-            
-            loss = outputs.loss
-            eval_total_loss += loss.detach().item()
-            eval_total_steps += 1
-
             predictions = outputs.logits.argmax(dim=-1) if not is_regression else outputs.logits.squeeze()
             predictions, references = accelerator.gather((predictions, batch["labels"]))
-            
-            
-            
             # If we are in a multiprocess environment, the last batch has duplicates
             if accelerator.num_processes > 1:
                 if step == len(eval_dataloader) - 1:
@@ -871,20 +965,9 @@ def main():
                  predictions=predictions,
                  references=references
             )  
-
-        
         eval_metric = metric.compute()        
-        eval_loss = eval_total_loss / eval_total_steps
-        logger.info(f"[{args.task_name}][EVAL] epoch {epoch}: {eval_metric}, Loss: {eval_loss}")
+        logger.info(f"[{args.task_name}][EVAL] epoch {epoch}: {eval_metric}")
         global_results[str(epoch)] = eval_metric
-        global_results[str(epoch)]["loss"] = eval_loss 
-        
-        if(eval_loss < lowest_loss):
-            
-            lowest_loss = eval_loss
-            lowest_loss_epoch = epoch
-            torch.save(model.state_dict(), f"{loss_save_folder}/{lowest_model_save_name}.pth" )
-
         if args.with_tracking:
             accelerator.log(
                 {
@@ -895,8 +978,6 @@ def main():
                 },
                 step=completed_steps,
             )
-
-
 
         if args.push_to_hub and epoch < args.num_train_epochs - 1:
             accelerator.wait_for_everyone()
@@ -965,34 +1046,12 @@ def main():
         eval_metric = metric.compute()
         logger.info(f"mnli-mm: {eval_metric}")
 
-        
-    all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
-    save_name = "218_res"
-    save_name += "_compressed" if args.compress == 'y' else ''
-    save_name += "_modular" if args.modular == 'y' else ''
-
-
-
-    train_results = {f"train_{k}": v for k, v in global_train_results.items()}
-    train_save_name = "TRAIN_RES"
-    train_save_name += "_compressed" if args.compress == 'y' else ''
-    train_save_name += "_modular" if args.modular == 'y' else ''
+    if args.output_dir is not None:
+        all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
+        with open(os.path.join(args.output_dir, "218_results_{args.model_name_or_path}_{args.task_name}.json"), "w") as f:
+            json.dump(global_results, f)
     
-    with open(f"./saves/res/TRAIN_{train_save_name}_distilbert_{args.task_name}.json", "w") as f:
-        json.dump(train_results,f)
-
-    with open(f"./saves/res/EVAL_{save_name}_distilbert_{args.task_name}.json", "w") as f:
-
-        json.dump(global_results, f)
-
-        
-
-
-    save_name = "e217"
-    save_name += "_compressed" if args.compress == 'y' else ''
-    save_name += "_modular" if args.modular == 'y' else ''
-
-    torch.save(model.state_dict(),f"{loss_save_folder}/{save_name}.pth")
+    
 
 if __name__ == "__main__":
     main()
