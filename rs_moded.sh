@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the array of TASK_NAMES
-TASK_NAMES=( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
+TASK_NAMES=( "copa" "rte" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
 
 # Define the array of MODEL_TYPES
 MODEL_TYPES=("distilbert/distilbert-base-uncased")
@@ -19,7 +19,7 @@ do
   for SEED in "${SEEDS[@]}"
   do
     # Use GNU Parallel to run tasks directly for each combination of model and seed
-    parallel -j 4 "python3 run_superglue_moded.py \
+    parallel -j 1 "python3 run_superglue_moded.py \
       --model_name_or_path ${MODEL_TYPE} \
       --task_name {} \
       --per_device_train_batch_size 32 \

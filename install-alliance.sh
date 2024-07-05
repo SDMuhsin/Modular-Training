@@ -4,11 +4,12 @@
 #python3 -m venv torch_sayed
 # Activate venv
 
-source ../torch_sayed/bin/activate
 
 
 module load python/3.11.5
 module load arrow/16.1.0
+source ../torch_sayed/bin/activate
+
 python3 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 python3 -m pip install nltk nlpaug numpy pandas
 
