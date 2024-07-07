@@ -16,7 +16,7 @@ The project pipeline consists of several stages.
 2. `mha_modular.py` and `ffn_modular.py` uses the generated data to train low rank versions of MHA and FFN blocks
 3. `run_superglue.py` integrates the trained submodules, fine tunes, and evaluates them on the specific dataset
 
-A full end-to-end run can be triggered by using the script `./modular_pipeline.sh. This only evaluates the model on the dataset for one seed. The script `./rs\_moded.sh` can be used to evaluate the model on 5 seeds and the python script `consolidate.py`can be used to tabulate the median of 5 results.
+A full end-to-end run can be triggered by using the script `./modular_pipeline.sh`. This only evaluates the model on the dataset for one seed. The script `./rs\_moded.sh` can be used to evaluate the model on 5 seeds and the python script `consolidate.py`can be used to tabulate the median of 5 results.
 
 # Results
 
