@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Define the array of TASK_NAMES
-TASK_NAMES=( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
+TASK_NAMES=( "copa" "wsc" "wic" "cb" "boolq" "stsb" "rte" "mrpc" )
 
 # Define the array of MODEL_TYPES
-MODEL_TYPES=("bert-base-uncased" "huawei-noah/TinyBERT_General_6L_768D" "google/mobilebert-uncased" "distilbert-base-uncased")
+MODEL_TYPES=( "microsoft/deberta-v3-xsmall" )  #("bert-base-uncased" "huawei-noah/TinyBERT_General_6L_768D" "google/mobilebert-uncased" "distilbert-base-uncased")
 
 # Define the array of SEEDS
-SEEDS=(41 42 43 44 45)
+SEEDS=( 44 45 )
 
 # Loop over each model
 for MODEL_TYPE in "${MODEL_TYPES[@]}"
@@ -19,7 +19,7 @@ do
   for SEED in "${SEEDS[@]}"
   do
     # Use GNU Parallel to run tasks directly for each combination of model and seed
-    parallel -j 2 "python3 run_superglue_baselines.py \
+    parallel -j 5 "python3 run_superglue_baselines.py \
       --model_name_or_path ${MODEL_TYPE} \
       --task_name {} \
       --per_device_train_batch_size 32 \

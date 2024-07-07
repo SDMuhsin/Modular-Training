@@ -208,6 +208,12 @@ def parse_args():
         action="store_true",
         help="Whether or not to enable to load a pretrained model whose head dimensions are different.",
     )
+
+    parser.add_argument(
+        "--moddistilbert",
+        type = str,
+        default = 'n'
+    )
     args = parser.parse_args()
 
     # Sanity checks
@@ -225,6 +231,19 @@ def parse_args():
         assert args.output_dir is not None, "Need an `output_dir` to create a repo when `--push_to_hub` is passed."
 
     return args
+
+def count_trainable_parameters(model):
+    """
+    Count the total number of trainable parameters in a PyTorch model.
+
+    Parameters:
+    model (nn.Module): A PyTorch model.
+
+    Returns:
+    int: The total number of trainable parameters.
+    """
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 
 
 def main():
@@ -346,7 +365,7 @@ def main():
     num_runs = 100
     input_length = 128  # Example input length
     times = []
-    batch_size = 128
+    batch_size = 1
     num_batches = num_runs
     for i in range(num_batches):
         print(f"{i}/{num_batches}",end="\r")
@@ -369,13 +388,31 @@ def main():
    
     average_time = sum(times) / len(times)
     print(f"\n\n\nAverage inference time: {average_time:.4f} seconds\n\n\n\n")
-    
+   
+    # FInd parameter count
+    res_file = "./saves/res/speed_and_inference.json"
+    res = {}
+    if(os.path.exists(res_file)):
+        res = json.load( open( res_file, 'r' ) )
+
+    res[args.model_name_or_path]= {
+        'time' : average_time,
+        'params' : count_trainable_parameters(model)
+    }
+
+    json.dump(
+        res,
+        open(res_file,'w')
+    )
+
+    if(args.moddistilbert != 'y'):
+        exit()
      
     my_model = copy.deepcopy(model)
     
-    module_trained_for = 100
+    module_trained_for = 200
     
-    args.job_name = "cbAblation"
+    args.job_name = "fn-cbm200aug3x"
     for i in range(6):
         
         module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
@@ -419,7 +456,16 @@ def main():
     average_time = sum(times) / len(times)
     average_time = sum(times) / len(times)
     print(f"\n\n\n [Compressed] Average inference time: {average_time:.4f} seconds\n\n\n\n")
-   
+ 
+    res['moddistilbert-base-uncased']= {
+        'time' : average_time,
+        'params' : count_trainable_parameters(model)
+    }
+
+    json.dump(
+        res,
+        open(res_file,'w')
+    )  
     exit()
     # Preprocessing the datasets
     if args.task_name is not None:

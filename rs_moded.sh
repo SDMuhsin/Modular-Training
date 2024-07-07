@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the array of TASK_NAMES
-TASK_NAMES=( "copa" "rte" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
+TASK_NAMES=( "stsb" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
 
 # Define the array of MODEL_TYPES
 MODEL_TYPES=("distilbert/distilbert-base-uncased")
@@ -31,3 +31,4 @@ do
       --seed ${SEED}" ::: "${TASK_NAMES[@]}"
   done
 done
+

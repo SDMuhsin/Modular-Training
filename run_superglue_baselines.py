@@ -381,30 +381,7 @@ def main():
     print(f"Non label column names",non_label_column_names)
 
     
-    ''' 
-    my_model = copy.deepcopy(model)
-    
-    module_trained_for = 100
-    
-    args.job_name = "cbAblation"
-    for i in range(6):
-        
-        module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
-        mha = MultiHeadSelfAttentionLowRank(config,compression=2)
-
-        #mha.load_state_dict(torch.load(module_path))
-        my_model.distilbert.transformer.layer[i].attention = mha
-        
-        
-        module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
-        ffn = FFNLowRank(config,compression=2)
-        #ffn.load_state_dict(torch.load(module_path))
-        my_model.distilbert.transformer.layer[i].ffn = ffn
-    
-    #model = my_model 
-    '''
-
-    # Preprocessing the datasets
+        # Preprocessing the datasets
     if args.task_name is not None:
         sentence1_key, sentence2_key, sentence3_key = task_to_keys[args.task_name]
     else:
