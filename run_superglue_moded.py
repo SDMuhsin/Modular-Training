@@ -49,7 +49,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from evaluate import load
 from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank
-from low_rank_modules.modeling_llama import LlamaForSequenceClassification 
+from low_rank_modules.modeling_llama import LlamaForSequenceClassification, LlamaMLPLowRank,LlamaAttentionLowRank 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.42.0.dev0")
@@ -386,18 +386,23 @@ def main():
             #token=args.token,
             trust_remote_code=args.trust_remote_code,
         )
-
-        print("ATTN IMPL : ", config._attn_implementation)
+        
+        if ("Llama" in args.model_name_or_path ):
+            config.pad_token_id = tokenizer.pad_token_id    
+            config.use_cache = False
+        
         config.save_pretrained(config_path)
     else:
         print("LOAD FROM SAVE")
         config = AutoConfig.from_pretrained(config_path)
-
-
- 
+    
+    #print("\n\n\n\n\nATTN IMPL : ", config._attn_implementation)
+    #exit()
 
     if ("Llama" in args.model_name_or_path ):
         config.pad_token_id = tokenizer.pad_token_id    
+        config.use_cache = False 
+
 
 
     # Load or save model
@@ -416,6 +421,7 @@ def main():
             ) 
 
             model.config.pad_token_id = tokenizer.pad_token_id
+            model.config.use_cache = False
         else:
             model = AutoModelForSequenceClassification.from_pretrained(
                 args.model_name_or_path,
@@ -443,19 +449,39 @@ def main():
     module_trained_for = 200
     
     #args.job_name = "cbAblation"
-    for i in range(0): 
-        
-        module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
-        mha = MultiHeadSelfAttentionLowRank(config,compression=2)
 
-        mha.load_state_dict(torch.load(module_path))
-        my_model.distilbert.transformer.layer[i].attention = mha
-        
-        
-        module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
-        ffn = FFNLowRank(config,compression=2)
-        ffn.load_state_dict(torch.load(module_path))
-        my_model.distilbert.transformer.layer[i].ffn = ffn
+    layer_count = 0
+
+    if ("Llama" in args.model_name_or_path):
+        layer_count = 16
+    else:
+        # Distilbert by default
+        layer_count = 6
+
+
+    for i in range(layer_count): 
+       
+        if ("Llama" in args.model_name_or_path):
+            
+            mha = LlamaAttentionLowRank(config,compression=2)
+            my_model.model.layers[i].self_attn = mha
+
+            ffn = LlamaMLPLowRank(config,compression=2)
+            my_model.model.layers[i].mlp = ffn
+
+
+        else: # Distilbert by default
+            module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
+            mha = MultiHeadSelfAttentionLowRank(config,compression=2)
+
+            mha.load_state_dict(torch.load(module_path))
+            my_model.distilbert.transformer.layer[i].attention = mha
+            
+            
+            module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
+            ffn = FFNLowRank(config,compression=2)
+            ffn.load_state_dict(torch.load(module_path))
+            my_model.distilbert.transformer.layer[i].ffn = ffn
     
     model = my_model 
     
