@@ -360,48 +360,62 @@ def main():
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
 
-    if not os.path.exists(config_path):
-        config = AutoConfig.from_pretrained(
-            args.model_name_or_path,
-            num_labels=num_labels,
-            finetuning_task=args.task_name,
-            cache_dir=args.cache_dir,
-            revision=args.model_revision,
-            token=args.token,
-            trust_remote_code=args.trust_remote_code,
-        )
-        config.save_pretrained(config_path)
-    else:
-        print("LOAD FROM SAVE")
-        config = AutoConfig.from_pretrained(config_path)
-
     # Load or save tokenizer
     if not os.path.exists(tokenizer_path):
         tokenizer = AutoTokenizer.from_pretrained(
             args.model_name_or_path,
-            cache_dir=args.cache_dir,
-            use_fast=args.use_fast_tokenizer,
-            revision=args.model_revision,
-            token=args.token,
+            #cache_dir=args.cache_dir,
+            #use_fast=args.use_fast_tokenizer,
+            #revision=args.model_revision,
+            #token=args.token,
             trust_remote_code=args.trust_remote_code,
         )
         tokenizer.save_pretrained(tokenizer_path)
     else:
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
+    if ("Llama" in args.model_name_or_path ):
+        tokenizer.pad_token = tokenizer.eos_token
+
+    if not os.path.exists(config_path):
+        config = AutoConfig.from_pretrained(
+            args.model_name_or_path,
+            num_labels=num_labels,
+            finetuning_task=args.task_name,
+            #revision=args.model_revision,
+            #token=args.token,
+            trust_remote_code=args.trust_remote_code,
+        )
+
+        print("ATTN IMPL : ", config._attn_implementation)
+        config.save_pretrained(config_path)
+    else:
+        print("LOAD FROM SAVE")
+        config = AutoConfig.from_pretrained(config_path)
+
+
+ 
+
+    if ("Llama" in args.model_name_or_path ):
+        config.pad_token_id = tokenizer.pad_token_id    
+
+
     # Load or save model
     if not os.path.exists(model_path):
 
-        if ( "Llama" in args.model_name_or_path ):
+        if ("Llama" in args.model_name_or_path ):
+
+
             model = LlamaForSequenceClassification.from_pretrained(
                 args.model_name_or_path,
                 config=config,
-                cache_dir=args.cache_dir,
-                revision=args.model_revision,
-                token=args.token,
+                #revision=args.model_revision,
+                #token=args.token,
                 trust_remote_code=args.trust_remote_code,
                 ignore_mismatched_sizes=args.ignore_mismatched_sizes,
             ) 
+
+            model.config.pad_token_id = tokenizer.pad_token_id
         else:
             model = AutoModelForSequenceClassification.from_pretrained(
                 args.model_name_or_path,

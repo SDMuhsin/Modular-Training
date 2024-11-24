@@ -4,7 +4,7 @@
 TASK_NAMES=( "cb" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
 
 # Define the array of MODEL_TYPES
-MODEL_TYPES=("yash3056/Llama-3.2-1B-imdb")  #("distilbert/distilbert-base-uncased") 
+MODEL_TYPES=("unsloth/Llama-3.2-1B")  #("distilbert/distilbert-base-uncased") 
 
 # Define the array of SEEDS
 SEEDS=(41)
