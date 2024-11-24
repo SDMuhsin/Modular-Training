@@ -48,7 +48,8 @@ from transformers import (
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from evaluate import load
-from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank 
+from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank
+from low_rank_modules.modeling_llama import LlamaForSequenceClassification 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.42.0.dev0")
@@ -390,17 +391,31 @@ def main():
 
     # Load or save model
     if not os.path.exists(model_path):
-        model = AutoModelForSequenceClassification.from_pretrained(
-            args.model_name_or_path,
-            from_tf=bool(".ckpt" in args.model_name_or_path),
-            config=config,
-            cache_dir=args.cache_dir,
-            revision=args.model_revision,
-            token=args.token,
-            trust_remote_code=args.trust_remote_code,
-            ignore_mismatched_sizes=args.ignore_mismatched_sizes,
-        )
+
+        if ( "Llama" in args.model_name_or_path ):
+            model = LlamaForSequenceClassification.from_pretrained(
+                args.model_name_or_path,
+                config=config,
+                cache_dir=args.cache_dir,
+                revision=args.model_revision,
+                token=args.token,
+                trust_remote_code=args.trust_remote_code,
+                ignore_mismatched_sizes=args.ignore_mismatched_sizes,
+            ) 
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(
+                args.model_name_or_path,
+                from_tf=bool(".ckpt" in args.model_name_or_path),
+                config=config,
+                cache_dir=args.cache_dir,
+                revision=args.model_revision,
+                token=args.token,
+                trust_remote_code=args.trust_remote_code,
+                ignore_mismatched_sizes=args.ignore_mismatched_sizes,
+            )
         model.save_pretrained(model_path)
+
+
     else:
         model = AutoModelForSequenceClassification.from_pretrained(model_path)
    
@@ -414,7 +429,7 @@ def main():
     module_trained_for = 200
     
     #args.job_name = "cbAblation"
-    for i in range(6):
+    for i in range(0): 
         
         module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
         mha = MultiHeadSelfAttentionLowRank(config,compression=2)

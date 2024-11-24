@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # Define the array of TASK_NAMES
-TASK_NAMES=( "stsb" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
+TASK_NAMES=( "cb" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
 
 # Define the array of MODEL_TYPES
-MODEL_TYPES=("distilbert/distilbert-base-uncased")
+MODEL_TYPES=("yash3056/Llama-3.2-1B-imdb")  #("distilbert/distilbert-base-uncased") 
 
 # Define the array of SEEDS
-SEEDS=(41 42 43 44 45)
+SEEDS=(41)
 
 # Loop over each model
 for MODEL_TYPE in "${MODEL_TYPES[@]}"
