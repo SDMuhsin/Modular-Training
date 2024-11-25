@@ -725,7 +725,11 @@ def main():
 
 
     else:
-        model = AutoModelForSequenceClassification.from_pretrained(model_path)
+        if ("Llama" in model_args.model_name_or_path ):
+            model = LlamaForSequenceClassification.from_pretrained(model_path)
+    
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(model_path)
     
     fine_tuned = data_args.post_ft_capture == 'y' 
     if fine_tuned:
@@ -1004,10 +1008,6 @@ def main():
 
         def __call__(self, module, inputs, outputs):
 
-            print("\\n\n\n\n")
-            print("Inputs:")
-            print(inputs)
-            print("\\n\n\n\n")
 
             input_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/mha/inputs/encoder_{self.encoder_idx}"
             create_directory_if_not_exists(input_save_folder)
@@ -1028,14 +1028,14 @@ def main():
 
         def pre_forward_hook(module, args):
             #hidden_states, attention_mask, *rest = args
-            print(f"Attention mask in pre-forward hook: {args} , {len(args)}")
+            print(f"Attention mask in pre-forward hook: {len(args)}")
             return args
 
         for i, hook in enumerate(hooks):
             if i == data_args.encoder_idx:
                 model.model.layers[i].self_attn.register_forward_hook(hooks[i])
                 model.model.layers[i].mlp.register_forward_hook(ffn_hooks[i])
-                model.model.layers[i].register_forward_pre_hook(pre_forward_hook)
+                model.model.layers[i].register_forward_hook(layer_hooks[i])
 
     else:
         # Original DistilBERT hook registration
