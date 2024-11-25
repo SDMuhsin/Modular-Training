@@ -51,7 +51,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from transformers import BertForSequenceClassification, AutoConfig
 
-
+from low_rank_modules.modeling_llama import LlamaForSequenceClassification
 import nlpaug.augmenter.sentence as nas
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks. [I am upgrading from 4.39.3.]
 check_min_version("4.41.0.dev0")
@@ -446,11 +446,14 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.environ['PYTHONHASHSEED'] = str(data_args.random_seed)
+    
     # Check if data is saved for cluster
-    config_path = os.path.join(save_dir, f"{data_args.task_name}_config")
-    tokenizer_path = os.path.join(save_dir, f"{data_args.task_name}_tokenizer")
-    model_path = os.path.join(save_dir, f"{data_args.task_name}_model")
-    metric_path = os.path.join(save_dir, f"{data_args.task_name}_metric.pkl")
+    model_name_short = model_args.model_name_or_path.split("/")[-1]
+    config_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_config")
+    tokenizer_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_tokenizer")
+    model_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_model")
+    metric_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_metric.pkl")
+
 
     # Setup logging
     logging.basicConfig(
@@ -650,57 +653,80 @@ def main():
                 print("\t",data[k])
                 print("_____")
     exit() '''
-    # Label correction
 
-    # Load pretrained model and tokenizer
-    #
-    # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
-    # download model & vocab.
-    # Load or save config
-    if not os.path.exists(config_path):
-        config = AutoConfig.from_pretrained(
-            model_args.config_name if model_args.config_name else model_args.model_name_or_path,
-            num_labels=num_labels,
-            finetuning_task=data_args.task_name,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            token=model_args.token,
-            trust_remote_code=model_args.trust_remote_code,
-        )
-        config.save_pretrained(config_path)
-    else:
-        config = AutoConfig.from_pretrained(config_path)
-
-    # Load or save tokenizer
     if not os.path.exists(tokenizer_path):
         tokenizer = AutoTokenizer.from_pretrained(
-            model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
-            cache_dir=model_args.cache_dir,
-            use_fast=model_args.use_fast_tokenizer,
-            revision=model_args.model_revision,
-            token=model_args.token,
+            model_args.model_name_or_path,
+            #cache_dir=args.cache_dir,
+            #use_fast=args.use_fast_tokenizer,
+            #revision=args.model_revision,
+            #token=args.token,
             trust_remote_code=model_args.trust_remote_code,
         )
         tokenizer.save_pretrained(tokenizer_path)
     else:
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
+    if ("Llama" in model_args.model_name_or_path ):
+        tokenizer.pad_token = tokenizer.eos_token
+
+    if not os.path.exists(config_path):
+        config = AutoConfig.from_pretrained(
+            model_args.model_name_or_path,
+            num_labels=num_labels,
+            finetuning_task=data_args.task_name,
+            #revision=args.model_revision,
+            #token=args.token,
+            trust_remote_code=model_args.trust_remote_code,
+        )
+        
+        if ("Llama" in model_args.model_name_or_path ):
+            config.pad_token_id = tokenizer.pad_token_id    
+            config.use_cache = False
+        
+        config.save_pretrained(config_path)
+    else:
+        print("LOAD FROM SAVE")
+        config = AutoConfig.from_pretrained(config_path)
+    
+
+    if ("Llama" in model_args.model_name_or_path ):
+        config.pad_token_id = tokenizer.pad_token_id    
+        config.use_cache = False 
+
     # Load or save model
     if not os.path.exists(model_path):
-        model = AutoModelForSequenceClassification.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            token=model_args.token,
-            trust_remote_code=model_args.trust_remote_code,
-            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
-        )
+
+        if ("Llama" in model_args.model_name_or_path ):
+
+            model = LlamaForSequenceClassification.from_pretrained(
+                model_args.model_name_or_path,
+                config=config,
+                #revision=args.model_revision,
+                #token=args.token,
+                trust_remote_code=model_args.trust_remote_code,
+                ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+            ) 
+
+            model.config.pad_token_id = tokenizer.pad_token_id
+            model.config.use_cache = False
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(
+                model_args.model_name_or_path,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                cache_dir=model_args.cache_dir,
+                revision=model_args.model_revision,
+                token=model_args.token,
+                trust_remote_code=model_args.trust_remote_code,
+                ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+            )
         model.save_pretrained(model_path)
+
+
     else:
         model = AutoModelForSequenceClassification.from_pretrained(model_path)
-   
+    
     fine_tuned = data_args.post_ft_capture == 'y' 
     if fine_tuned:
         print("Using already fine tuned Model")
@@ -913,26 +939,49 @@ def main():
             print(f"Directory '{directory}' created successfully.")
    
     class AttentionHook:
-        
-        def __init__(self,encoder_idx):
+        def __init__(self, encoder_idx):
             self.encoder_idx = encoder_idx
             self.batch_idx = 0
 
         def __call__(self, module, inputs, outputs):
-            
             output_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/mha/outputs/encoder_{self.encoder_idx}"
             create_directory_if_not_exists(output_save_folder)
             o = outputs[0]
             torch.save(o, f"{output_save_folder}/o_batch_{self.batch_idx}.pt")
             self.batch_idx += 1
 
-    class FfnHook:
-        def __init__(self,encoder_idx):
+    class AttentionHookV2:
+        def __init__(self, encoder_idx):
             self.encoder_idx = encoder_idx
             self.batch_idx = 0
 
         def __call__(self, module, inputs, outputs):
+            base_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/mha/encoder_{self.encoder_idx}"
             
+            # Save inputs
+            input_save_folder = f"{base_save_folder}/inputs"
+            create_directory_if_not_exists(input_save_folder)
+            
+            a = inputs[0]
+            b = inputs[1]
+            torch.save(a, f"{input_save_folder}/a_batch_{self.batch_idx}.pt")
+            torch.save(b, f"{input_save_folder}/b_batch_{self.batch_idx}.pt")
+
+            # Save outputs
+            output_save_folder = f"{base_save_folder}/outputs"
+            create_directory_if_not_exists(output_save_folder)
+            
+            o = outputs[0]
+            torch.save(o, f"{output_save_folder}/o_batch_{self.batch_idx}.pt")
+
+            self.batch_idx += 1
+
+    class FfnHook:
+        def __init__(self, encoder_idx):
+            self.encoder_idx = encoder_idx
+            self.batch_idx = 0
+
+        def __call__(self, module, inputs, outputs):
             input_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/ffn/inputs/encoder_{self.encoder_idx}"
             create_directory_if_not_exists(input_save_folder)
             output_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/ffn/outputs/encoder_{self.encoder_idx}"
@@ -940,21 +989,26 @@ def main():
 
             o = outputs
             torch.save(o, f"{output_save_folder}/o_batch_{self.batch_idx}.pt")
-            
+
             h = inputs[0]
             torch.save(h, f"{input_save_folder}/h_batch_{self.batch_idx}.pt")
 
             self.batch_idx += 1
-    
+
     class LayerHook:
-        def __init__(self,encoder_idx):
+        def __init__(self, encoder_idx):
             self.inputs = []
             self.outputs = []
             self.encoder_idx = encoder_idx
             self.batch_idx = 0
 
         def __call__(self, module, inputs, outputs):
-            
+
+            print("\\n\n\n\n")
+            print("Inputs:")
+            print(inputs)
+            print("\\n\n\n\n")
+
             input_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/mha/inputs/encoder_{self.encoder_idx}"
             create_directory_if_not_exists(input_save_folder)
 
@@ -962,23 +1016,40 @@ def main():
             b = inputs[1]
 
             torch.save(a, f"{input_save_folder}/a_batch_{self.batch_idx}.pt")
-            torch.save(b, f"{input_save_folder}/b_batch_{self.batch_idx}.pt")    
+            torch.save(b, f"{input_save_folder}/b_batch_{self.batch_idx}.pt")
             self.batch_idx += 1
-            
 
-    modelbert = model.distilbert  
-    hooks = [AttentionHook(i) for i in range(len(modelbert.transformer.layer))]
-    layer_hooks = [LayerHook(i) for i in range(len(modelbert.transformer.layer))]
-    ffn_hooks = [FfnHook(i) for i in range(len(modelbert.transformer.layer))]
+    # Check if the model is Llama and adjust the hook registration accordingly
+    if "Llama" in model_args.model_name_or_path:
+        # Assuming model.layers is a list of layers in Llama
+        hooks = [AttentionHook(i) for i in range(len(model.model.layers))]
+        layer_hooks = [LayerHook(i) for i in range(len(model.model.layers))]
+        ffn_hooks = [FfnHook(i) for i in range(len(model.model.layers))]
+
+        def pre_forward_hook(module, args):
+            #hidden_states, attention_mask, *rest = args
+            print(f"Attention mask in pre-forward hook: {args} , {len(args)}")
+            return args
+
+        for i, hook in enumerate(hooks):
+            if i == data_args.encoder_idx:
+                model.model.layers[i].self_attn.register_forward_hook(hooks[i])
+                model.model.layers[i].mlp.register_forward_hook(ffn_hooks[i])
+                model.model.layers[i].register_forward_pre_hook(pre_forward_hook)
+
+    else:
+        # Original DistilBERT hook registration
+        modelbert = model.distilbert
+        hooks = [AttentionHook(i) for i in range(len(modelbert.transformer.layer))]
+        layer_hooks = [LayerHook(i) for i in range(len(modelbert.transformer.layer))]
+        ffn_hooks = [FfnHook(i) for i in range(len(modelbert.transformer.layer))]
 
 
-    for i,hook in enumerate(hooks):
-        
-        if(i == data_args.encoder_idx):
-            modelbert.transformer.layer[i].attention.register_forward_hook(hooks[i])
-            modelbert.transformer.layer[i].ffn.register_forward_hook(ffn_hooks[i])
-            modelbert.transformer.layer[i].register_forward_hook(layer_hooks[i])
-
+        for i, hook in enumerate(hooks):
+            if i == data_args.encoder_idx:
+                modelbert.transformer.layer[i].attention.register_forward_hook(hooks[i])
+                modelbert.transformer.layer[i].ffn.register_forward_hook(ffn_hooks[i])
+                modelbert.transformer.layer[i].register_forward_hook(layer_hooks[i])
 
     trainer = Trainer(
         model=model,

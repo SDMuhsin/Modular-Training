@@ -14,14 +14,14 @@ do_plug_mods=$8
 aug_n=$9
 task=${10}
 
-model_name="distilbert/distilbert-base-uncased" 
+model_name="unsloth/Llama-3.2-1B" #"distilbert/distilbert-base-uncased"
 #./dp_sa_pipeline.sh test 1 n y y y 2 y
 
 
 encoder_idx=0
 random_seed=42
 rm ./saves/"${task}_augmented_dataset.pkl"
-while [ $encoder_idx -le 5 ]
+while [ $encoder_idx -le 1 ]
 do
 	rm  ./saves/$model_name/$task/* -r
 	echo "Generating data for encoder $encoder_idx"

@@ -341,7 +341,7 @@ class LlamaAttentionLowRank(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_value: Optional[Cache] = None,
-        output_attentions: bool = False,
+        output_attentions: bool = True,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
@@ -441,7 +441,7 @@ class LlamaAttention(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_value: Optional[Cache] = None,
-        output_attentions: bool = False,
+        output_attentions: bool = True,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.46
@@ -527,7 +527,7 @@ class LlamaFlashAttention2(LlamaAttention):
         attention_mask: Optional[torch.LongTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_value: Optional[Cache] = None,
-        output_attentions: bool = False,
+        output_attentions: bool = True,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.46
@@ -642,7 +642,7 @@ class LlamaSdpaAttention(LlamaAttention):
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_value: Optional[Cache] = None,
-        output_attentions: bool = False,
+        output_attentions: bool = True,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.46
@@ -752,7 +752,7 @@ class LlamaDecoderLayer(nn.Module):
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         past_key_value: Optional[Cache] = None,
-        output_attentions: Optional[bool] = False,
+        output_attentions: Optional[bool] = True,
         use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.46
@@ -780,6 +780,7 @@ class LlamaDecoderLayer(nn.Module):
                 Arbitrary kwargs to be ignored, used for FSDP and other methods that injects code
                 into the model
         """
+
         residual = hidden_states
 
         hidden_states = self.input_layernorm(hidden_states)
@@ -1388,6 +1389,8 @@ class LlamaForSequenceClassification(LlamaPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
+
+        
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
             Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
