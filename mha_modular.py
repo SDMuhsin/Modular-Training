@@ -108,9 +108,6 @@ def main():
     set_seed(42)
     save_dir = "./downloads"
 
-    config_path = os.path.join(save_dir, f"{args.task}_config")
-    tokenizer_path = os.path.join(save_dir, f"{args.task}_tokenizer")
-    model_path = os.path.join(save_dir, f"{args.task}_model")
 
 
     model_name_short = args.model_name.split("/")[-1]
@@ -358,7 +355,6 @@ def main():
                     aug_pe_cos_inputs = augment_tensor(pe_cos_inputs,multiplier=1).to(device)
                     aug_pe_sin_inputs = augment_tensor(pe_sin_inputs,multiplier=1).to(device)
 
-                    print(f"Input dimensions : ", aug_x_inputs.shape, aug_a_inputs.shape)
                     aug_outputs,_,_ = original_sa(
                             aug_x_inputs,
                             attention_mask = aug_a_inputs,

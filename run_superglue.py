@@ -48,6 +48,7 @@ from transformers import (
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank 
+from low_rank_modules.modeling_llama import LlamaForSequenceClassification,LlamaMLPLowRank,LlamaAttentionLowRank
 from torch.nn import KLDivLoss
 from torch.nn.functional import softmax, log_softmax, kl_div
 
@@ -331,11 +332,11 @@ save_dir = "./downloads"
 def main():
     args = parse_args()
 
+    model_name_short = args.model_name_or_path.split("/")[-1]
+    config_path = os.path.join(save_dir, f"{args.task_name}_{model_name_short}_config")
+    tokenizer_path = os.path.join(save_dir, f"{args.task_name}_{model_name_short}_tokenizer")
+    model_path = os.path.join(save_dir, f"{args.task_name}_{model_name_short}_model")
 
-    # Check if data is saved for cluster
-    config_path = os.path.join(save_dir, f"{args.task_name}_config")
-    tokenizer_path = os.path.join(save_dir, f"{args.task_name}_tokenizer")
-    model_path = os.path.join(save_dir, f"{args.task_name}_model")
     random.seed(args.random_seed)
     np.random.seed(args.random_seed)
     torch.manual_seed(args.random_seed)
@@ -343,16 +344,12 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.environ['PYTHONHASHSEED'] = str(args.random_seed)
-    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
-    # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    send_example_telemetry("run_glue_no_trainer", args)
 
-    # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
-    # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
-    # in the environment
+
     accelerator = (
         Accelerator(log_with=args.report_to, project_dir=args.output_dir) if args.with_tracking else Accelerator()
     )
+
     # Make one log on every process with the configuration for debugging.
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -360,6 +357,7 @@ def main():
         level=logging.INFO,
     )
     logger.info(accelerator.state, main_process_only=False)
+
     if accelerator.is_local_main_process:
         datasets.utils.logging.set_verbosity_warning()
         transformers.utils.logging.set_verbosity_info()
@@ -374,6 +372,7 @@ def main():
     else:
         logger.info(f"\n\n\n SEED MANUALLY SET TO 42 \n\n\n")
         set_seed(42)
+    
     # Handle the repository creation
     if accelerator.is_main_process:
         if args.push_to_hub:
@@ -433,11 +432,86 @@ def main():
             label_list.sort()  # Let's sort it for determinism
             num_labels = len(label_list)
     
-    # Load pretrained model and tokenizer
-    #
-    # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
-    # download model & vocab.
 
+    # Load or save tokenizer
+    if not os.path.exists(tokenizer_path):
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model_name_or_path,
+            #cache_dir=args.cache_dir,
+            #use_fast=args.use_fast_tokenizer,
+            #revision=args.model_revision,
+            #token=args.token,
+            trust_remote_code=args.trust_remote_code,
+        )
+        tokenizer.save_pretrained(tokenizer_path)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+
+    if ("Llama" in args.model_name_or_path ):
+        tokenizer.pad_token = tokenizer.eos_token
+
+    if not os.path.exists(config_path):
+        config = AutoConfig.from_pretrained(
+            args.model_name_or_path,
+            num_labels=num_labels,
+            finetuning_task=args.task_name,
+            #revision=args.model_revision,
+            #token=args.token,
+            trust_remote_code=args.trust_remote_code,
+        )
+        
+        if ("Llama" in args.model_name_or_path ):
+            config.pad_token_id = tokenizer.pad_token_id    
+            config.use_cache = False
+        
+        config.save_pretrained(config_path)
+    else:
+        print("LOAD FROM SAVE")
+        config = AutoConfig.from_pretrained(config_path)
+    
+
+    if ("Llama" in args.model_name_or_path ):
+        config.pad_token_id = tokenizer.pad_token_id    
+        config.use_cache = False 
+
+
+
+    # Load or save model
+    if not os.path.exists(model_path):
+
+        if ("Llama" in args.model_name_or_path ):
+
+
+            model = LlamaForSequenceClassification.from_pretrained(
+                args.model_name_or_path,
+                config=config,
+                #revision=args.model_revision,
+                #token=args.token,
+                trust_remote_code=args.trust_remote_code,
+                ignore_mismatched_sizes=args.ignore_mismatched_sizes,
+            ) 
+
+            model.config.pad_token_id = tokenizer.pad_token_id
+            model.config.use_cache = False
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(
+                args.model_name_or_path,
+                from_tf=bool(".ckpt" in args.model_name_or_path),
+                config=config,
+                cache_dir=args.cache_dir,
+                revision=args.model_revision,
+                token=args.token,
+                trust_remote_code=args.trust_remote_code,
+                ignore_mismatched_sizes=args.ignore_mismatched_sizes,
+            )
+        model.save_pretrained(model_path)
+
+
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(model_path)
+ 
+
+    ''' # PREVIOUS VERSION THAT DOES NOT SUPPORT Llama
     if not os.path.exists(config_path):
         config = AutoConfig.from_pretrained(
             args.model_name_or_path,
@@ -485,7 +559,7 @@ def main():
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    config.pad_token_id = tokenizer.pad_token_id
+    config.pad_token_id = tokenizer.pad_token_id'''
 
     
     '''
@@ -505,8 +579,16 @@ def main():
     my_model = copy.deepcopy(model)
     
     module_trained_for = args.last_mod_trained_for
+    
 
-    for i in range(6):
+    if ("Llama" in args.model_name_or_path):
+        layer_count = 16
+    else:
+        # Distilbert by default
+        layer_count = 6
+
+
+    for i in range(layer_count): 
         
         #og_encoder_self_attention = model.bert.encoder.layer[i].attention.self    
         #my_model.bert.encoder.layer[i].attention.self = BertMixedSelfAttention(config,None,og_encoder_self_attention)
@@ -514,30 +596,38 @@ def main():
         if (args.encoder_modularity == 'M' or args.encoder_modularity == 'MF'):
            
             module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
-            mha = MultiHeadSelfAttentionLowRank(config,compression=int(args.encoder_compression))
+            mha = LlamaAttentionLowRank(config,layer_idx=i,compression=int(args.encoder_compression)) if 'Llama' in args.model_name_or_path else MultiHeadSelfAttentionLowRank(config,compression=int(args.encoder_compression))
 
             mha_1 = copy.deepcopy(mha)
 
             mha.load_state_dict(torch.load(module_path))
-            my_model.distilbert.transformer.layer[i].attention = mha
-            
-            allClose = check_weights_allclose(mha_1,my_model.distilbert.transformer.layer[i].attention)
-            if(allClose):
-                print("\n\n\n\n ALL CLOSE \n\n\n\n")
+
+            if( 'Llama' in args.model_name_or_path):
+                my_model.model.layers[i].self_attn = mha
+            else:
+                my_model.distilbert.transformer.layer[i].attention = mha
+             
+            #allClose = check_weights_allclose(mha_1,my_model.distilbert.transformer.layer[i].attention)
+            #if(allClose):
+            #    print("\n\n\n\n ALL CLOSE \n\n\n\n")
 
         if (args.encoder_modularity == 'F' or args.encoder_modularity == 'MF'):
             
             module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
-            ffn = FFNLowRank(config,compression=int(args.encoder_compression))
+            ffn =  LlamaMLPLowRank(config,compression=int(args.encoder_compression)) if 'Llama' in args.model_name_or_path else FFNLowRank(config,compression=int(args.encoder_compression))
 
             ffn_1 = copy.deepcopy(ffn)
 
             ffn.load_state_dict(torch.load(module_path))
-            my_model.distilbert.transformer.layer[i].ffn = ffn
+
+            if( 'Llama' in args.model_name_or_path):
+                my_model.model.layers[i].mlp = ffn
+            else:
+                my_model.distilbert.transformer.layer[i].ffn = ffn
             
-            allClose = check_weights_allclose(ffn_1,my_model.distilbert.transformer.layer[i].ffn)
-            if(allClose):
-                print("\n\n\n\n ALL CLOSE \n\n\n\n")
+            #allClose = check_weights_allclose(ffn_1,my_model.distilbert.transformer.layer[i].ffn)
+            #if(allClose):
+            #    print("\n\n\n\n ALL CLOSE \n\n\n\n")
         else:
             print("\n\n\n NO MODULARITY SELECTED, TRAINING FULL MODEL\n\n\n")
        

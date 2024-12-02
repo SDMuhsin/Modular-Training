@@ -427,7 +427,7 @@ def main():
                 args.model_name_or_path,
                 from_tf=bool(".ckpt" in args.model_name_or_path),
                 config=config,
-                cache_dir=args.cache_dir,
+                cache_dir=None,
                 revision=args.model_revision,
                 token=args.token,
                 trust_remote_code=args.trust_remote_code,
@@ -437,7 +437,12 @@ def main():
 
 
     else:
-        model = AutoModelForSequenceClassification.from_pretrained(model_path)
+
+        if ("Llama" in args.model_name_or_path ):
+            model = LlamaForSequenceClassification.from_pretrained(model_path)
+    
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(model_path)
    
     non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
     print(f"Non label column names",non_label_column_names)
@@ -881,9 +886,11 @@ def main():
             print(f"Directory '{directory}' created successfully.")
         else:
             print(f"Directory '{directory}' already exists.")
+    
     #baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}"
     #create_directory_if_not_exists(baseline_model_dir)
     #torch.save(model.state_dict(),f"{baseline_model_dir}/baseline_model.pth")
+    
     if args.output_dir is not None:
         accelerator.wait_for_everyone()
         unwrapped_model = accelerator.unwrap_model(model)

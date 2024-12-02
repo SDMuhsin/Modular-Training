@@ -7,7 +7,7 @@ TASK_NAMES=( "cb" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "bo
 MODEL_TYPES=("unsloth/Llama-3.2-1B")  #("distilbert/distilbert-base-uncased") 
 
 # Define the array of SEEDS
-SEEDS=(41)
+SEEDS=(42)
 
 # Loop over each model
 for MODEL_TYPE in "${MODEL_TYPES[@]}"
@@ -27,7 +27,7 @@ do
       --num_train_epochs 18 \
       --output_dir ./tmp/{}_{}_{} \
       --random_seed ${SEED} \
-      --job_name 'fn-{}m200aug3x'\
+      --job_name 'TEST'\
       --seed ${SEED}" ::: "${TASK_NAMES[@]}"
   done
 done
