@@ -950,34 +950,56 @@ def main():
         def __call__(self, module, inputs, outputs):
             output_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/mha/outputs/encoder_{self.encoder_idx}"
             create_directory_if_not_exists(output_save_folder)
+
             o = outputs[0]
             torch.save(o, f"{output_save_folder}/o_batch_{self.batch_idx}.pt")
+
+
             self.batch_idx += 1
 
     class AttentionHookV2:
+
         def __init__(self, encoder_idx):
+
             self.encoder_idx = encoder_idx
             self.batch_idx = 0
 
         def __call__(self, module, inputs, outputs):
-            base_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/mha/encoder_{self.encoder_idx}"
+
+            base_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/mha"
             
             # Save inputs
-            input_save_folder = f"{base_save_folder}/inputs"
+            input_save_folder = f"{base_save_folder}/inputs/encoder_{self.encoder_idx}"
             create_directory_if_not_exists(input_save_folder)
             
+            #print("MHA INPUTS")
+            #print([type(a) for a in inputs])
+
+            #print("Position ids : ",inputs[2].shape)
+            #print("Position embeddings : ",len(inputs[7]))
+            
+
             a = inputs[0]
             b = inputs[1]
-            torch.save(a, f"{input_save_folder}/a_batch_{self.batch_idx}.pt")
-            torch.save(b, f"{input_save_folder}/b_batch_{self.batch_idx}.pt")
+            torch.save(a, f"{input_save_folder}/a_batch_{self.batch_idx}.pt") # Hidden state
+            torch.save(b, f"{input_save_folder}/b_batch_{self.batch_idx}.pt") # Attention mask
 
+            pi = inputs[2] # Position ids
+            torch.save(pi, f"{input_save_folder}/pi_batch_{self.batch_idx}.pt") 
+
+            pe_cos, pe_sin = inputs[7] # Positional embeddings
+            torch.save(pe_cos, f"{input_save_folder}/pe_cos_batch_{self.batch_idx}.pt") 
+            torch.save(pe_sin, f"{input_save_folder}/pe_sin_batch_{self.batch_idx}.pt")
+            
+            print("PE COS : ", pe_cos.shape)
+            print("PE SIN : ", pe_sin.shape)
             # Save outputs
-            output_save_folder = f"{base_save_folder}/outputs"
+            output_save_folder = f"{base_save_folder}/outputs/encoder_{self.encoder_idx}"
             create_directory_if_not_exists(output_save_folder)
             
             o = outputs[0]
             torch.save(o, f"{output_save_folder}/o_batch_{self.batch_idx}.pt")
-
+            
             self.batch_idx += 1
 
     class FfnHook:
@@ -1022,7 +1044,7 @@ def main():
     # Check if the model is Llama and adjust the hook registration accordingly
     if "Llama" in model_args.model_name_or_path:
         # Assuming model.layers is a list of layers in Llama
-        hooks = [AttentionHook(i) for i in range(len(model.model.layers))]
+        hooks = [AttentionHookV2(i) for i in range(len(model.model.layers))]
         layer_hooks = [LayerHook(i) for i in range(len(model.model.layers))]
         ffn_hooks = [FfnHook(i) for i in range(len(model.model.layers))]
 
@@ -1035,7 +1057,7 @@ def main():
             if i == data_args.encoder_idx:
                 model.model.layers[i].self_attn.register_forward_hook(hooks[i])
                 model.model.layers[i].mlp.register_forward_hook(ffn_hooks[i])
-                model.model.layers[i].register_forward_hook(layer_hooks[i])
+                #model.model.layers[i].register_forward_hook(layer_hooks[i])
 
     else:
         # Original DistilBERT hook registration

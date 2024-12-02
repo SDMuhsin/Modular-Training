@@ -399,7 +399,6 @@ class LlamaAttentionLowRank(nn.Module):
 
         if not output_attentions:
             attn_weights = None
-
         return attn_output, attn_weights, (key_states, value_states) if use_cache else None
 
 
@@ -447,6 +446,7 @@ class LlamaAttention(nn.Module):
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.46
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        #print("I AM HERE BASE")
         bsz, q_len, _ = hidden_states.size()
 
         query_states = self.q_proj(hidden_states)
@@ -465,8 +465,12 @@ class LlamaAttention(nn.Module):
                 "`position_embeddings` (Tuple of tensors, containing cos and sin). In v4.46 `position_ids` will be "
                 "removed and `position_embeddings` will be mandatory."
             )
+            
+            print(f"position_ids: {position_ids}") # Returns None from mha_modular.py
+            print(f"value_states shape: {value_states.shape}") # Returns okay
             cos, sin = self.rotary_emb(value_states, position_ids)
         else:
+            #print("Position embeddings not none")
             cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
@@ -538,6 +542,7 @@ class LlamaFlashAttention2(LlamaAttention):
                 "`static` cache implementation is not compatible with `attn_implementation==flash_attention_2` "
                 "make sure to use `sdpa` in the mean time, and open an issue at https://github.com/huggingface/transformers"
             )
+        print("I AM HERE FLASH")
 
         output_attentions = False
 
@@ -648,6 +653,8 @@ class LlamaSdpaAttention(LlamaAttention):
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.46
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        print("I AM HERE SDPA")
+
         if output_attentions:
             # TODO: Improve this warning with e.g. `model.config.attn_implementation = "manual"` once this is implemented.
             logger.warning_once(
@@ -730,8 +737,8 @@ class LlamaSdpaAttention(LlamaAttention):
 
 LLAMA_ATTENTION_CLASSES = {
     "eager": LlamaAttention,
-    "flash_attention_2": LlamaFlashAttention2,
-    "sdpa": LlamaSdpaAttention,
+    "flash_attention_2": LlamaAttention,#LlamaFlashAttention2, # For simplicity
+    "sdpa": LlamaAttention#LlamaSdpaAttention,
 }
 
 
@@ -787,14 +794,14 @@ class LlamaDecoderLayer(nn.Module):
 
         # Self Attention
         hidden_states, self_attn_weights, present_key_value = self.self_attn(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_value=past_key_value,
-            output_attentions=output_attentions,
-            use_cache=use_cache,
-            cache_position=cache_position,
-            position_embeddings=position_embeddings,
+            hidden_states,
+            attention_mask,
+            position_ids,
+            past_key_value,
+            output_attentions,
+            False,
+            cache_position,
+            position_embeddings, # Changed all these to positional arguments so they can be better captured by hooks
             **kwargs,
         )
         hidden_states = residual + hidden_states
@@ -1059,7 +1066,7 @@ class LlamaModel(LlamaPreTrainedModel):
                     position_embeddings,
                 )
             else:
-                print("I AM HERE")
+                #print("I AM HERE")
                 layer_outputs = decoder_layer(
                     hidden_states,
                     causal_mask, # Converted to positional argument so that it can be captured via hook

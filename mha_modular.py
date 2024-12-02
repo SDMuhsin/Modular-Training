@@ -49,6 +49,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from transformers import BertForSequenceClassification, AutoConfig
 from low_rank_modules.distilbert import MultiHeadSelfAttentionLowRank 
+from low_rank_modules.modeling_llama import LlamaForSequenceClassification,LlamaAttentionLowRank
 import psutil
 
 check_min_version("4.41.0.dev0")
@@ -110,6 +111,14 @@ def main():
     config_path = os.path.join(save_dir, f"{args.task}_config")
     tokenizer_path = os.path.join(save_dir, f"{args.task}_tokenizer")
     model_path = os.path.join(save_dir, f"{args.task}_model")
+
+
+    model_name_short = args.model_name.split("/")[-1]
+    config_path = os.path.join(save_dir, f"{args.task}_{model_name_short}_config")
+    tokenizer_path = os.path.join(save_dir, f"{args.task}_{model_name_short}_tokenizer")
+    model_path = os.path.join(save_dir, f"{args.task}_{model_name_short}_model")
+
+    # Make run deterministic
     random.seed(args.random_seed)
     np.random.seed(args.random_seed)
     torch.manual_seed(args.random_seed)
@@ -117,62 +126,98 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.environ['PYTHONHASHSEED'] = str(args.random_seed)
-    if not os.path.exists(config_path):
-        config = AutoConfig.from_pretrained(
-            args.model_name,
-            num_labels=args.num_labels,
-            finetuning_task=args.task,
-            cache_dir=None,
-            revision='main',
-            token=None,
-            trust_remote_code=False,
-        )
-        config.save_pretrained(config_path)
-    else:
-        print("LOAD FROM SAVE")
-        config = AutoConfig.from_pretrained(config_path)
 
-    # Load or save tokenizer
+
     if not os.path.exists(tokenizer_path):
         tokenizer = AutoTokenizer.from_pretrained(
             args.model_name,
-            cache_dir=None,
-            use_fast=True,
-            revision='main',
-            token=None,
-            trust_remote_code=False
+            #cache_dir=args.cache_dir,
+            #use_fast=args.use_fast_tokenizer,
+            #revision=args.model_revision,
+            #token=args.token,
+            trust_remote_code=False,
         )
         tokenizer.save_pretrained(tokenizer_path)
     else:
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
+
+    if ("Llama" in args.model_name ):
+        tokenizer.pad_token = tokenizer.eos_token
+
+    if not os.path.exists(config_path):
+        config = AutoConfig.from_pretrained(
+            args.model_name,
+            num_labels=args.num_labels,
+            finetuning_task=args.task,
+            #revision=args.model_revision,
+            #token=args.token,
+            trust_remote_code=False,
+        )
+        
+        if ("Llama" in args.model_name ):
+            config.pad_token_id = tokenizer.pad_token_id    
+            config.use_cache = False
+        
+        config.save_pretrained(config_path)
+    else:
+        print("LOAD CONFIG FROM SAVE")
+        config = AutoConfig.from_pretrained(config_path)
+    
+
+    if ("Llama" in args.model_name ):
+        config.pad_token_id = tokenizer.pad_token_id    
+        config.use_cache = False 
+
     # Load or save model
     if not os.path.exists(model_path):
-        model = AutoModelForSequenceClassification.from_pretrained(
-            args.model_name,
-            from_tf=bool(".ckpt" in args.model_name),
-            config=config,
-            cache_dir=None,
-            revision='main',
-            token=None,
-            trust_remote_code=False,
-            ignore_mismatched_sizes=False,
-        )
+
+        if ("Llama" in args.model_name ):
+
+            model = LlamaForSequenceClassification.from_pretrained(
+                args.model_name,
+                config=config,
+                #revision=args.model_revision,
+                #token=args.token,
+                trust_remote_code=False,
+                ignore_mismatched_sizes=False,
+            ) 
+
+            model.config.pad_token_id = tokenizer.pad_token_id
+            model.config.use_cache = False
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(
+                args.model_name,
+                from_tf=bool(".ckpt" in args.model_name),
+                config=config,
+                cache_dir=None,
+                revision='main',
+                token=None,
+                trust_remote_code=False,
+                ignore_mismatched_sizes=False,
+            )
         model.save_pretrained(model_path)
+
+
     else:
-        model = AutoModelForSequenceClassification.from_pretrained(model_path)
+        if ("Llama" in args.model_name ):
+            model = LlamaForSequenceClassification.from_pretrained(model_path)
+    
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(model_path)
+
     # Configuration and model setup code remains unchanged
 
 
     encoder_idx = int(args.encoder_idx)
     print(f"Encoder idx = {encoder_idx}")
 
-    # attention_layer = model.bert.encoder.layer[0].attention.self
-    attention_layer =  MultiHeadSelfAttentionLowRank(config,compression=args.compression)
-    # attention_layer = BertSelfAttention   (config)
-	
-    original_sa = model.distilbert.transformer.layer[encoder_idx].attention
-    #Load saved inputs
+    if('Llama' in args.model_name):
+        attention_layer = LlamaAttentionLowRank(config,compression=args.compression)
+        original_sa = model.model.layers[encoder_idx].self_attn
+    else:
+        attention_layer =  MultiHeadSelfAttentionLowRank(config,compression=args.compression)
+        original_sa = model.distilbert.transformer.layer[encoder_idx].attention
     
     input_save_folder = f"./saves/{args.model_name}/{args.task}/mha/inputs/encoder_{encoder_idx}/"
     output_save_folder = f"./saves/{args.model_name}/{args.task}/mha/outputs/encoder_{encoder_idx}/"
@@ -283,6 +328,11 @@ def main():
                 x_inputs = dropout_tensor( torch.load(f"{input_save_folder}/a_batch_{bIdx}.pt"), p ).to(device)
                 a_inputs = torch.load(f"{input_save_folder}/b_batch_{bIdx}.pt").to(device)
                 
+                if('Llama' in args.model_name):
+                    pi_inputs = torch.load(f"{input_save_folder}/pi_batch_{bIdx}.pt").to(device)
+                    pe_cos_inputs = torch.load(f"{input_save_folder}/pe_cos_batch_{bIdx}.pt").to(device)
+                    pe_sin_inputs = torch.load(f"{input_save_folder}/pe_sin_batch_{bIdx}.pt").to(device)
+                
             except Exception as e:
                 print(f"[e{epoch}b{bIdx}]Unable to dropout inputs?",e)
                 ec +=1
@@ -297,12 +347,49 @@ def main():
             aug_x_inputs = None
             aug_a_inputs = None
             if (augment):
+
                 aug_x_inputs = augment_tensor(x_inputs,multiplier=1).to(device)
                 aug_a_inputs = augment_tensor(a_inputs,multiplier=1).to(device)
-                aug_outputs = original_sa(aug_x_inputs,aug_x_inputs,aug_x_inputs,mask=aug_a_inputs)[0]
-           
-            predicted_normal_outputs = attention_layer(x_inputs,x_inputs,x_inputs,mask=a_inputs)[0]
-            predicted_aug_outputs = attention_layer(aug_x_inputs,aug_x_inputs,aug_x_inputs,mask=aug_a_inputs)[0] if augment else None
+                
+
+                if('Llama' in args.model_name):
+        
+                    aug_pi_inputs = augment_tensor(pi_inputs,multiplier=1).to(device)
+                    aug_pe_cos_inputs = augment_tensor(pe_cos_inputs,multiplier=1).to(device)
+                    aug_pe_sin_inputs = augment_tensor(pe_sin_inputs,multiplier=1).to(device)
+
+                    print(f"Input dimensions : ", aug_x_inputs.shape, aug_a_inputs.shape)
+                    aug_outputs,_,_ = original_sa(
+                            aug_x_inputs,
+                            attention_mask = aug_a_inputs,
+                            position_ids = aug_pi_inputs,
+                            position_embeddings = (aug_pe_cos_inputs,aug_pe_sin_inputs)
+                            )
+
+                else:
+
+                    aug_outputs = original_sa(aug_x_inputs,aug_x_inputs,aug_x_inputs,mask=aug_a_inputs)[0]
+        
+            if ('Llama' in args.model_name):
+                predicted_normal_outputs,_,_ = attention_layer(
+                        x_inputs,
+                        attention_mask = a_inputs,
+                        position_ids = pi_inputs,
+                        position_embeddings = (pe_cos_inputs,pe_sin_inputs)
+                )
+
+                predicted_aug_outputs,_,_ = attention_layer(
+                        aug_x_inputs,
+                        attention_mask = aug_a_inputs,
+                        position_ids = aug_pi_inputs,
+                        position_embeddings = (aug_pe_cos_inputs,aug_pe_sin_inputs)
+                ) if augment else (None,None,None)
+
+            else:
+                predicted_normal_outputs = attention_layer(x_inputs,x_inputs,x_inputs,mask=a_inputs)[0]
+                predicted_aug_outputs = attention_layer(aug_x_inputs,aug_x_inputs,aug_x_inputs,mask=aug_a_inputs)[0] if augment else None
+
+
             # Compute loss
             loss_normal = loss_fn(predicted_normal_outputs, normal_outputs)
             loss_aug = loss_fn(predicted_aug_outputs,aug_outputs) if augment else 0
