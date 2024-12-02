@@ -49,6 +49,8 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from transformers import BertForSequenceClassification, AutoConfig
 from low_rank_modules.distilbert import FFNLowRank 
+from low_rank_modules.modeling_llama import LlamaForSequenceClassification,LlamaMLPLowRank
+
 
 check_min_version("4.41.0.dev0")
 
@@ -104,9 +106,11 @@ def main():
     set_seed(42)
     save_dir = "./downloads"
 
+
     config_path = os.path.join(save_dir, f"{args.task}_config")
     tokenizer_path = os.path.join(save_dir, f"{args.task}_tokenizer")
     model_path = os.path.join(save_dir, f"{args.task}_model")
+
     random.seed(args.random_seed)
     np.random.seed(args.random_seed)
     torch.manual_seed(args.random_seed)
@@ -114,61 +118,102 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.environ['PYTHONHASHSEED'] = str(args.random_seed)
-    if not os.path.exists(config_path):
-        config = AutoConfig.from_pretrained(
-            args.model_name,
-            num_labels=args.num_labels,
-            finetuning_task=args.task,
-            cache_dir=None,
-            revision='main',
-            token=None,
-            trust_remote_code=False,
-        )
-        config.save_pretrained(config_path)
-    else:
-        print("LOAD FROM SAVE")
-        config = AutoConfig.from_pretrained(config_path)
 
-    # Load or save tokenizer
+
     if not os.path.exists(tokenizer_path):
         tokenizer = AutoTokenizer.from_pretrained(
             args.model_name,
-            cache_dir=None,
-            use_fast=True,
-            revision='main',
-            token=None,
-            trust_remote_code=False
+            #cache_dir=args.cache_dir,
+            #use_fast=args.use_fast_tokenizer,
+            #revision=args.model_revision,
+            #token=args.token,
+            trust_remote_code=False,
         )
         tokenizer.save_pretrained(tokenizer_path)
     else:
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
+
+    if ("Llama" in args.model_name ):
+        tokenizer.pad_token = tokenizer.eos_token
+
+    if not os.path.exists(config_path):
+        config = AutoConfig.from_pretrained(
+            args.model_name,
+            num_labels=args.num_labels,
+            finetuning_task=args.task,
+            #revision=args.model_revision,
+            #token=args.token,
+            trust_remote_code=False,
+        )
+        
+        if ("Llama" in args.model_name ):
+            config.pad_token_id = tokenizer.pad_token_id    
+            config.use_cache = False
+        
+        config.save_pretrained(config_path)
+    else:
+        print("LOAD CONFIG FROM SAVE")
+        config = AutoConfig.from_pretrained(config_path)
+    
+
+    if ("Llama" in args.model_name ):
+        config.pad_token_id = tokenizer.pad_token_id    
+        config.use_cache = False 
+
     # Load or save model
     if not os.path.exists(model_path):
-        model = AutoModelForSequenceClassification.from_pretrained(
-            args.model_name,
-            from_tf=bool(".ckpt" in args.model_name),
-            config=config,
-            cache_dir=None,
-            revision='main',
-            token=None,
-            trust_remote_code=False,
-            ignore_mismatched_sizes=False,
-        )
+
+        if ("Llama" in args.model_name ):
+
+            model = LlamaForSequenceClassification.from_pretrained(
+                args.model_name,
+                config=config,
+                #revision=args.model_revision,
+                #token=args.token,
+                trust_remote_code=False,
+                ignore_mismatched_sizes=False,
+            ) 
+
+            model.config.pad_token_id = tokenizer.pad_token_id
+            model.config.use_cache = False
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(
+                args.model_name,
+                from_tf=bool(".ckpt" in args.model_name),
+                config=config,
+                cache_dir=None,
+                revision='main',
+                token=None,
+                trust_remote_code=False,
+                ignore_mismatched_sizes=False,
+            )
         model.save_pretrained(model_path)
+
+
     else:
-        model = AutoModelForSequenceClassification.from_pretrained(model_path)
+        if ("Llama" in args.model_name ):
+            model = LlamaForSequenceClassification.from_pretrained(model_path)
+    
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(model_path)
+
     # Configuration and model setup code remains unchanged
-
-
 
     encoder_idx = int(args.encoder_idx)
     print(f"Encoder idx = {encoder_idx}")
     compression = int(args.compression)
     print(f"Compression = {compression}")
+    
+    if('Llama' in args.model_name):
+        
+        original_ffn_layer = model.model.layers[encoder_idx].mlp
+        new_ffn_layer = LlamaMLPLowRank(config,compression=compression)
 
-    original_ffn_layer = model.distilbert.transformer.layer[encoder_idx].ffn
-    new_ffn_layer = FFNLowRank(config,compression=compression) # New bert layer to be train
+    else:
+
+        original_ffn_layer = model.distilbert.transformer.layer[encoder_idx].ffn
+        new_ffn_layer = FFNLowRank(config,compression=compression) # New bert layer to be train
     
     #Load saved inputs
 
