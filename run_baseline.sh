@@ -5,7 +5,7 @@ TASK_NAMES=("cb") #( "copa" "wsc" "wic" "cb" "boolq" "stsb" "rte" "mrpc" )
 
 # Define the array of MODEL_TYPES
 #MODEL_TYPES=("cb") #( "microsoft/deberta-v3-xsmall" )  #("bert-base-uncased" "huawei-noah/TinyBERT_General_6L_768D" "google/mobilebert-uncased" "distilbert-base-uncased")
-MODEL_TYPES=("unsloth/Llama-3.2-1B")  #("distilbert/distilbert-base-uncased") 
+MODEL_TYPES=("distilbert/distilbert-base-uncased") #("unsloth/Llama-3.2-1B")  
 
 # Define the array of SEEDS
 SEEDS=( 42 )

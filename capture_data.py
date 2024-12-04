@@ -502,7 +502,7 @@ def main():
 
 
     if data_args.task_name is not None:
-        dataset_path = os.path.join(save_dir, f"{data_args.task_name}")
+        dataset_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}")
 
         if not os.path.exists(dataset_path):
             # Downloading and loading a dataset from the hub.
@@ -991,8 +991,6 @@ def main():
             torch.save(pe_cos, f"{input_save_folder}/pe_cos_batch_{self.batch_idx}.pt") 
             torch.save(pe_sin, f"{input_save_folder}/pe_sin_batch_{self.batch_idx}.pt")
             
-            print("PE COS : ", pe_cos.shape)
-            print("PE SIN : ", pe_sin.shape)
             # Save outputs
             output_save_folder = f"{base_save_folder}/outputs/encoder_{self.encoder_idx}"
             create_directory_if_not_exists(output_save_folder)
@@ -1060,6 +1058,7 @@ def main():
                 #model.model.layers[i].register_forward_hook(layer_hooks[i])
 
     else:
+        print("HERE AS INTENDED")
         # Original DistilBERT hook registration
         modelbert = model.distilbert
         hooks = [AttentionHook(i) for i in range(len(modelbert.transformer.layer))]

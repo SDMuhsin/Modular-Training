@@ -163,7 +163,10 @@ def main():
 
     # Load or save model
     if not os.path.exists(model_path):
+        
+        print("Model : ", args.model_name)
 
+        exit()
         if ("Llama" in args.model_name ):
 
             model = LlamaForSequenceClassification.from_pretrained(

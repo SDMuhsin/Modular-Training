@@ -382,6 +382,7 @@ def main():
                 ) if augment else (None,None,None)
 
             else:
+                print("INPUT SHAPE",x_inputs.shape,a_inputs.shape)
                 predicted_normal_outputs = attention_layer(x_inputs,x_inputs,x_inputs,mask=a_inputs)[0]
                 predicted_aug_outputs = attention_layer(aug_x_inputs,aug_x_inputs,aug_x_inputs,mask=aug_a_inputs)[0] if augment else None
 

@@ -14,14 +14,14 @@ do_plug_mods=$8
 aug_n=$9
 task=${10}
 
-model_name="unsloth/Llama-3.2-1B" #"distilbert/distilbert-base-uncased"
+model_name="distilbert/distilbert-base-uncased" #"unsloth/Llama-3.2-1B" 
 #./dp_sa_pipeline.sh test 1 n y y y 2 y
 
 
 encoder_idx=0
 random_seed=42
 rm ./saves/"${task}_augmented_dataset.pkl"
-while [ $encoder_idx -le 11 ]
+while [ $encoder_idx -le 1 ]
 do
 	rm  ./saves/$model_name/$task/* -r
 	echo "Generating data for encoder $encoder_idx"
@@ -46,6 +46,7 @@ do
 	fi
 	echo "Data generated succesfully"
 	
+
 	unset CUDA_VISIBLE_DEVICES
 
 
@@ -57,7 +58,7 @@ do
 	    export job_name epochs task noise_threshold_scale encoder_compression model_name
 
 	    # Execute one instance of dis_mha_modular.py and one instance of dis_ffn_modular.py in parallel for the same encoder index
-	    parallel -j 2 -u ::: \
+	    parallel -j 1 -u ::: \
 		"echo 'Modular training for SA module, encoder $encoder_idx'; python3 mha_modular.py --encoder_idx=$encoder_idx --model_name=$model_name --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"\
 		"echo 'Modular training for BL module, encoder $encoder_idx'; python3 ffn_modular.py --encoder_idx=$encoder_idx --model_name=$model_name --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"
 	fi	

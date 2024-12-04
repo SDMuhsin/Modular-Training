@@ -573,7 +573,7 @@ def main():
     print(teacher)'''
     teacher = copy.deepcopy(model)
     baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}/baseline_model.pth"
-    teacher.load_state_dict(torch.load(baseline_model_dir))
+    #teacher.load_state_dict(torch.load(baseline_model_dir))
 
     ''' @@@@@@@@@@@@@@@@@@@ PLUG IN MODULES @@@@@@@@@@@@@@@@@@@@@@@@ '''
     my_model = copy.deepcopy(model)
@@ -582,7 +582,7 @@ def main():
     
 
     if ("Llama" in args.model_name_or_path):
-        layer_count = 16
+        layer_count = 12
     else:
         # Distilbert by default
         layer_count = 6
