@@ -476,7 +476,7 @@ def main():
                 trust_remote_code=args.trust_remote_code,
                 ignore_mismatched_sizes=args.ignore_mismatched_sizes,
             )
-        model.save_pretrained(model_path)
+        model.save_pretrained(model_path, safe_serialization=False)
     else:
         
         if ('roberta' in args.model_name_or_path.lower()):
@@ -959,22 +959,6 @@ def main():
     if args.with_tracking:
         accelerator.end_training()
 
-    if args.output_dir is not None:
-        accelerator.wait_for_everyone()
-        unwrapped_model = accelerator.unwrap_model(model)
-        unwrapped_model.save_pretrained(
-            args.output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
-        )
-        if accelerator.is_main_process:
-            tokenizer.save_pretrained(args.output_dir)
-            if args.push_to_hub:
-                api.upload_folder(
-                    commit_message="End of training",
-                    folder_path=args.output_dir,
-                    repo_id=repo_id,
-                    repo_type="model",
-                    token=args.hub_token,
-                )
 
     if args.task_name == "mnli":
         # Final evaluation on mismatched validation set
