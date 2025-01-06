@@ -545,7 +545,7 @@ class RobertaLayer(nn.Module):
             hidden_states,
             attention_mask,
             head_mask,
-            output_attentions=output_attentions,
+            output_attentions=True, #Fprced for capture
             past_key_value=self_attn_past_key_value,
         )
         attention_output = self_attention_outputs[0]

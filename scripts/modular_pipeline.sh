@@ -21,7 +21,7 @@ model_name="roberta-base"
 encoder_idx=0
 random_seed=42
 rm ./saves/"${task}_augmented_dataset.pkl"
-while [ $encoder_idx -le 5 ]
+while [ $encoder_idx -le 11 ]
 do
 	rm  ./saves/$model_name/$task/* -r
 	echo "Generating data for encoder $encoder_idx"
