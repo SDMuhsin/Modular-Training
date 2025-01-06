@@ -49,7 +49,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from transformers import BertForSequenceClassification, AutoConfig
 from low_rank_modules.distilbert import MultiHeadSelfAttentionLowRank 
-from low_rank_modules.modeling_roberta import RobertaForSequenceClassification
+from low_rank_modules.modeling_roberta import RobertaForSequenceClassification, RobertaAttentionLowRank
 import psutil
 
 check_min_version("4.41.0.dev0")
@@ -72,19 +72,6 @@ import time
 import torch.optim as optim
 import torch.nn as nn
 # Print the location of the BertModel class definition
-
-'''
-
-linear_projection: 1.06% of total time
-prepare_query_key_value: 0.10% of total time
-handle_cross_attention_and_past_key: 0.00% of total time
-attention_score_calculation: 33.12% of total time
-normalize_and_mask_attention_scores: 19.71% of total time
-finalize_attention_output: 46.01% of total time
-Average runtime for original module: 0.048446 seconds
-Average runtime for shared module: 0.033481 seconds
-
-'''
 
 def print_memory_usage():
     process = psutil.Process(os.getpid())
@@ -148,7 +135,7 @@ def main():
     # Load or save model
     if not os.path.exists(model_path):
 
-        if ("roberta" in args.model_name ):
+        if ("roberta" in args.model_name.lower() ):
 
             model = RobertaForSequenceClassification.from_pretrained(
                 args.model_name,
@@ -183,8 +170,15 @@ def main():
     print(f"Encoder idx = {encoder_idx}")
 
     # attention_layer = model.bert.encoder.layer[0].attention.self
-    attention_layer =  MultiHeadSelfAttentionLowRank(config,compression=args.compression)
-    original_sa = model.distilbert.transformer.layer[encoder_idx].attention
+
+    
+    if( "roberta" in args.model_name.lower()):
+        attention_layer = RobertaAttentionLowRank(config,compression=args.compression)
+        original_sa     = model.roberta.encoder.layer[encoder_idx].attention
+
+    else:
+        attention_layer =  MultiHeadSelfAttentionLowRank(config,compression=args.compression)
+        original_sa = model.distilbert.transformer.layer[encoder_idx].attention
     #Load saved inputs
     
     input_save_folder = f"./saves/{args.model_name}/{args.task}/mha/inputs/encoder_{encoder_idx}/"
@@ -314,10 +308,23 @@ def main():
             if (augment):
                 aug_x_inputs = augment_tensor(x_inputs,multiplier=1).to(device)
                 aug_a_inputs = augment_tensor(a_inputs,multiplier=1).to(device)
-                aug_outputs = original_sa(aug_x_inputs,aug_x_inputs,aug_x_inputs,mask=aug_a_inputs)[0]
+
+                if("roberta" in args.model_name.lower()):
+                    aug_outputs = original_sa( aug_x_inputs, aug_a_inputs)[0]
+                
+                else:
+                    aug_outputs = original_sa(aug_x_inputs,aug_x_inputs,aug_x_inputs,mask=aug_a_inputs)[0]
            
-            predicted_normal_outputs = attention_layer(x_inputs,x_inputs,x_inputs,mask=a_inputs)[0]
-            predicted_aug_outputs = attention_layer(aug_x_inputs,aug_x_inputs,aug_x_inputs,mask=aug_a_inputs)[0] if augment else None
+            if ("roberta" in args.model_name.lower()):
+                predicted_normal_outputs = attention_layer(x_inputs,a_inputs)[0]
+            else:
+                predicted_normal_outputs = attention_layer(x_inputs,x_inputs,x_inputs,mask=a_inputs)[0]
+
+            if ("roberta" in args.model_name.lower()):
+                predicted_aug_outputs = attention_layer(aug_x_inputs,aug_a_inputs)[0] if augment else None        
+            else:
+                predicted_aug_outputs = attention_layer(aug_x_inputs,aug_x_inputs,aug_x_inputs,mask=aug_a_inputs)[0] if augment else None
+
             # Compute loss
             loss_normal = loss_fn(predicted_normal_outputs, normal_outputs)
             loss_aug = loss_fn(predicted_aug_outputs,aug_outputs) if augment else 0

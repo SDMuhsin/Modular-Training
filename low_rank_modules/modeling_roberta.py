@@ -401,7 +401,7 @@ class RobertaSelfOutput(nn.Module):
 
 ROBERTA_SELF_ATTENTION_CLASSES = {
     "eager": RobertaSelfAttention,
-    "sdpa": RobertaSdpaSelfAttention,
+    "sdpa": RobertaSelfAttention,
 }
 
 
@@ -1707,3 +1707,224 @@ def create_position_ids_from_input_ids(input_ids, padding_idx, past_key_values_l
     mask = input_ids.ne(padding_idx).int()
     incremental_indices = (torch.cumsum(mask, dim=1).type_as(mask) + past_key_values_length) * mask
     return incremental_indices.long() + padding_idx
+
+
+# ----------------------------------------------------------------------
+# Low-rank variant of RobertaSelfOutput
+# ----------------------------------------------------------------------
+class RobertaSelfOutputLowRank(nn.Module):
+    def __init__(self, config, compression=2):
+        super().__init__()
+        # Here we replace the single dense layer with two layers (reduce + expand).
+        # Input dimension:  hidden_size
+        # Reduced dimension: hidden_size // compression
+        # Output dimension: hidden_size
+        self.dense_reduce = nn.Linear(config.hidden_size, config.hidden_size // compression, bias=False)
+        self.dense_expand = nn.Linear(config.hidden_size // compression, config.hidden_size, bias=True)
+
+        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+    def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
+        # Low-rank transformation
+        hidden_states = self.dense_expand(self.dense_reduce(hidden_states))
+        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        return hidden_states
+
+
+# ----------------------------------------------------------------------
+# Low-rank variant of RobertaSelfAttention
+# ----------------------------------------------------------------------
+class RobertaSelfAttentionLowRank(nn.Module):
+    def __init__(self, config, position_embedding_type=None, compression=2):
+        super().__init__()
+        if config.hidden_size % config.num_attention_heads != 0 and not hasattr(config, "embedding_size"):
+            raise ValueError(
+                f"The hidden size ({config.hidden_size}) is not a multiple of the number of attention "
+                f"heads ({config.num_attention_heads})"
+            )
+
+        self.num_attention_heads = config.num_attention_heads
+        self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
+        # all_head_size is the total dimension for all heads = hidden_size
+        self.all_head_size = self.num_attention_heads * self.attention_head_size
+
+        # Instead of a single nn.Linear(hidden_size -> all_head_size),
+        # we do a two-layer reduce/expand for each of Q, K, and V.
+        self.query_reduce = nn.Linear(config.hidden_size, self.all_head_size // compression, bias=False)
+        self.query_expand = nn.Linear(self.all_head_size // compression, self.all_head_size, bias=True)
+
+        self.key_reduce = nn.Linear(config.hidden_size, self.all_head_size // compression, bias=False)
+        self.key_expand = nn.Linear(self.all_head_size // compression, self.all_head_size, bias=True)
+
+        self.value_reduce = nn.Linear(config.hidden_size, self.all_head_size // compression, bias=False)
+        self.value_expand = nn.Linear(self.all_head_size // compression, self.all_head_size, bias=True)
+
+        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+        self.position_embedding_type = position_embedding_type or getattr(
+            config, "position_embedding_type", "absolute"
+        )
+
+        if self.position_embedding_type in ["relative_key", "relative_key_query"]:
+            self.max_position_embeddings = config.max_position_embeddings
+            self.distance_embedding = nn.Embedding(2 * config.max_position_embeddings - 1, self.attention_head_size)
+
+        self.is_decoder = config.is_decoder
+
+    def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
+        # Reshape [batch_size, seq_len, all_head_size]
+        # into     [batch_size, num_heads, seq_len, head_size].
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(new_x_shape)
+        return x.permute(0, 2, 1, 3)
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.FloatTensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        output_attentions: Optional[bool] = False,
+    ) -> Tuple[torch.Tensor]:
+        is_cross_attention = encoder_hidden_states is not None
+
+        # Low-rank Q
+        mixed_query_layer = self.query_expand(self.query_reduce(hidden_states))
+
+        # Handle K, V
+        if is_cross_attention and past_key_value is not None:
+            # Reuse keys, values from past if cross-attention and they exist
+            key_layer = past_key_value[0]
+            value_layer = past_key_value[1]
+            attention_mask = encoder_attention_mask
+        elif is_cross_attention:
+            # Low-rank K, V for encoder hidden states
+            mixed_key_layer = self.key_expand(self.key_reduce(encoder_hidden_states))
+            mixed_value_layer = self.value_expand(self.value_reduce(encoder_hidden_states))
+            key_layer = self.transpose_for_scores(mixed_key_layer)
+            value_layer = self.transpose_for_scores(mixed_value_layer)
+            attention_mask = encoder_attention_mask
+        elif past_key_value is not None:
+            # Low-rank K, V for current hidden_states plus concatenation of past
+            mixed_key_layer = self.key_expand(self.key_reduce(hidden_states))
+            mixed_value_layer = self.value_expand(self.value_reduce(hidden_states))
+            key_layer = torch.cat([past_key_value[0], self.transpose_for_scores(mixed_key_layer)], dim=2)
+            value_layer = torch.cat([past_key_value[1], self.transpose_for_scores(mixed_value_layer)], dim=2)
+        else:
+            # Standard self-attention: low-rank K, V
+            mixed_key_layer = self.key_expand(self.key_reduce(hidden_states))
+            mixed_value_layer = self.value_expand(self.value_reduce(hidden_states))
+            key_layer = self.transpose_for_scores(mixed_key_layer)
+            value_layer = self.transpose_for_scores(mixed_value_layer)
+
+        query_layer = self.transpose_for_scores(mixed_query_layer)
+
+        use_cache = past_key_value is not None
+        if self.is_decoder:
+            past_key_value = (key_layer, value_layer)
+
+        # Compute attention scores: [batch, num_heads, seq_len, seq_len]
+        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+
+        # Relative position embeddings (if needed)
+        if self.position_embedding_type in ["relative_key", "relative_key_query"]:
+            query_length, key_length = query_layer.shape[2], key_layer.shape[2]
+            if use_cache:
+                position_ids_l = torch.tensor(key_length - 1, dtype=torch.long, device=hidden_states.device).view(-1, 1)
+            else:
+                position_ids_l = torch.arange(query_length, dtype=torch.long, device=hidden_states.device).view(-1, 1)
+            position_ids_r = torch.arange(key_length, dtype=torch.long, device=hidden_states.device).view(1, -1)
+            distance = position_ids_l - position_ids_r
+
+            positional_embedding = self.distance_embedding(distance + self.max_position_embeddings - 1)
+            positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility
+
+            if self.position_embedding_type == "relative_key":
+                relative_position_scores = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
+                attention_scores = attention_scores + relative_position_scores
+            else:  # "relative_key_query"
+                relative_position_scores_query = torch.einsum("bhld,lrd->bhlr", query_layer, positional_embedding)
+                relative_position_scores_key = torch.einsum("bhrd,lrd->bhlr", key_layer, positional_embedding)
+                attention_scores = attention_scores + relative_position_scores_query + relative_position_scores_key
+
+        # Scale scores
+        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+
+        # Apply attention mask
+        if attention_mask is not None:
+            attention_scores = attention_scores + attention_mask
+
+        # Normalize
+        attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+        attention_probs = self.dropout(attention_probs)
+
+        # Mask heads if we want to
+        if head_mask is not None:
+            attention_probs = attention_probs * head_mask
+
+        # Context layer: [batch, num_heads, seq_len, head_size]
+        context_layer = torch.matmul(attention_probs, value_layer)
+
+        # [batch, seq_len, num_heads, head_size]
+        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        # [batch, seq_len, all_head_size] = [batch, seq_len, hidden_size]
+        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        context_layer = context_layer.view(new_context_layer_shape)
+
+        outputs = (context_layer, attention_probs) if output_attentions else (context_layer,)
+
+        if self.is_decoder:
+            outputs = outputs + (past_key_value,)
+
+        return outputs
+
+
+# ----------------------------------------------------------------------
+# Low-rank variant of RobertaAttention
+# ----------------------------------------------------------------------
+class RobertaAttentionLowRank(nn.Module):
+    def __init__(self, config, position_embedding_type=None, compression=2):
+        super().__init__()
+        # Replace self-attention with our low-rank version
+        self.self = RobertaSelfAttentionLowRank(config, position_embedding_type=position_embedding_type, compression=compression)
+        # Replace the final dense output with our low-rank version
+        self.output = RobertaSelfOutputLowRank(config, compression=compression)
+        self.pruned_heads = set()
+
+    def prune_heads(self, heads):
+        # You can adapt the pruning logic if desired, or leave it unimplemented.
+        if len(heads) == 0:
+            return
+        # For a fully working pruning, you'd replicate the logic from the original code.
+        raise NotImplementedError("Head pruning not implemented in low-rank version.")
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.FloatTensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        output_attentions: Optional[bool] = False,
+    ) -> Tuple[torch.Tensor]:
+
+        self_outputs = self.self(
+            hidden_states,
+            attention_mask,
+            head_mask,
+            encoder_hidden_states,
+            encoder_attention_mask,
+            past_key_value,
+            output_attentions,
+        )
+
+        # self_outputs[0] is the context layer of shape [batch, seq_len, hidden_size]
+        attention_output = self.output(self_outputs[0], hidden_states)
+
+        # Return attention output + any other relevant outputs (attentions, cache, etc.)
+        outputs = (attention_output,) + self_outputs[1:]
+        return outputs
