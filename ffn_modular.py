@@ -49,7 +49,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from transformers import BertForSequenceClassification, AutoConfig
 from low_rank_modules.distilbert import FFNLowRank 
-
+from low_rank_modules.modeling_roberata import RobertaForSequenceClassification,
 check_min_version("4.41.0.dev0")
 
 #python3 isolated_sa.py --encoder_idx=0 && python3 isolated_sa.py --encoder_idx=1 && python3 isolated_sa.py --encoder_idx=2 && python3 isolated_sa.py --encoder_idx=3 && python3 isolated_sa.py --encoder_idx=4 && python3 isolated_sa.py --encoder_idx=5 && python3 isolated_sa.py --encoder_idx=6 && python3 isolated_sa.py --encoder_idx=7 && python3 isolated_sa.py --encoder_idx=8 && python3 isolated_sa.py --encoder_idx=9 && python3 isolated_sa.py --encoder_idx=10 && python3 isolated_sa.py --encoder_idx=11
@@ -104,9 +104,12 @@ def main():
     set_seed(42)
     save_dir = "./downloads"
 
-    config_path = os.path.join(save_dir, f"{args.task}_config")
-    tokenizer_path = os.path.join(save_dir, f"{args.task}_tokenizer")
-    model_path = os.path.join(save_dir, f"{args.task}_model")
+    # Check if data is saved for cluster\
+    model_name_short = args.model_name.split("/")[-1]
+    config_path = os.path.join(save_dir, f"{args.task}_{model_name_short}_config")
+    tokenizer_path = os.path.join(save_dir, f"{args.task}_{model_name_short}_tokenizer")
+    model_path = os.path.join(save_dir, f"{args.task}_{model_name_short}_model") 
+
     random.seed(args.random_seed)
     np.random.seed(args.random_seed)
     torch.manual_seed(args.random_seed)
@@ -114,51 +117,62 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.environ['PYTHONHASHSEED'] = str(args.random_seed)
-    if not os.path.exists(config_path):
-        config = AutoConfig.from_pretrained(
-            args.model_name,
-            num_labels=args.num_labels,
-            finetuning_task=args.task,
-            cache_dir=None,
-            revision='main',
-            token=None,
-            trust_remote_code=False,
-        )
-        config.save_pretrained(config_path)
-    else:
-        print("LOAD FROM SAVE")
-        config = AutoConfig.from_pretrained(config_path)
-
-    # Load or save tokenizer
+   
     if not os.path.exists(tokenizer_path):
         tokenizer = AutoTokenizer.from_pretrained(
             args.model_name,
-            cache_dir=None,
-            use_fast=True,
-            revision='main',
-            token=None,
-            trust_remote_code=False
+            trust_remote_code=False,
         )
         tokenizer.save_pretrained(tokenizer_path)
     else:
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
+    if not os.path.exists(config_path):
+        config = AutoConfig.from_pretrained(
+            args.model_name,
+            num_labels=args.num_labels,
+            finetuning_task=args.task,
+            trust_remote_code=False,
+        )
+        
+        config.save_pretrained(config_path)
+    else:
+        print("LOAD CONFIG FROM SAVE")
+        config = AutoConfig.from_pretrained(config_path)
+    
     # Load or save model
     if not os.path.exists(model_path):
-        model = AutoModelForSequenceClassification.from_pretrained(
-            args.model_name,
-            from_tf=bool(".ckpt" in args.model_name),
-            config=config,
-            cache_dir=None,
-            revision='main',
-            token=None,
-            trust_remote_code=False,
-            ignore_mismatched_sizes=False,
-        )
-        model.save_pretrained(model_path)
+
+        if ("roberta" in args.model_name.lower() ):
+
+            model = RobertaForSequenceClassification.from_pretrained(
+                args.model_name,
+                config=config,
+                trust_remote_code=False,
+                ignore_mismatched_sizes=False,
+            ) 
+
+            model.config.use_cache = False
+        else:
+
+            model = AutoModelForSequenceClassification.from_pretrained(
+                args.model_name,
+                from_tf=bool(".ckpt" in args.model_name),
+                config=config,
+                cache_dir=None,
+                revision='main',
+                token=None,
+                trust_remote_code=False,
+                ignore_mismatched_sizes=False,
+            )
+        model.save_pretrained(model_path,safe_serialization=False)
+
     else:
-        model = AutoModelForSequenceClassification.from_pretrained(model_path)
-    # Configuration and model setup code remains unchanged
+        if ("roberta" in args.model_name ):
+            model = RobertaForSequenceClassification.from_pretrained(model_path)
+    
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(model_path)
 
 
 
