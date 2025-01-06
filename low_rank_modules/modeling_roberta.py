@@ -488,12 +488,32 @@ class RobertaOutput(nn.Module):
         return hidden_states
 
 
+class RobertaFFN(nn.Module):
+    """
+    A new submodule that wraps the Intermediate and Output layers (the "feed-forward" part).
+    By passing in the already-created `RobertaIntermediate` and `RobertaOutput` submodules,
+    we ensure the parameter names remain unchanged in the state dict.
+    """
+    def __init__(self, intermediate: RobertaIntermediate, output: RobertaOutput):
+        super().__init__()
+        # Keep the same submodules as attributes of this module.
+        self.intermediate = intermediate
+        self.output = output
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        # Exactly the same logic that was in feed_forward_chunk previously.
+        intermediate_output = self.intermediate(hidden_states)
+        layer_output = self.output(intermediate_output, hidden_states)
+        return layer_output
+
+
 # Copied from transformers.models.bert.modeling_bert.BertLayer with Bert->Roberta
 class RobertaLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.chunk_size_feed_forward = config.chunk_size_feed_forward
         self.seq_len_dim = 1
+
         self.attention = RobertaAttention(config)
         self.is_decoder = config.is_decoder
         self.add_cross_attention = config.add_cross_attention
@@ -501,8 +521,13 @@ class RobertaLayer(nn.Module):
             if not self.is_decoder:
                 raise ValueError(f"{self} should be used as a decoder model if cross attention is added")
             self.crossattention = RobertaAttention(config, position_embedding_type="absolute")
+
+        # Create your existing intermediate and output layers
         self.intermediate = RobertaIntermediate(config)
         self.output = RobertaOutput(config)
+
+        # Wrap them into a single FFN module
+        self.ffn = RobertaFFN(self.intermediate, self.output)
 
     def forward(
         self,
@@ -558,6 +583,7 @@ class RobertaLayer(nn.Module):
             cross_attn_present_key_value = cross_attention_outputs[-1]
             present_key_value = present_key_value + cross_attn_present_key_value
 
+        # Apply the feed-forward chunking logic, but call the new FFN module under the hood
         layer_output = apply_chunking_to_forward(
             self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
         )
@@ -569,10 +595,12 @@ class RobertaLayer(nn.Module):
 
         return outputs
 
-    def feed_forward_chunk(self, attention_output):
-        intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
-        return layer_output
+    def feed_forward_chunk(self, attention_output: torch.Tensor) -> torch.Tensor:
+        """
+        This function is exactly the same as before, but internally we call self.ffn now
+        (which in turn calls self.intermediate and self.output).
+        """
+        return self.ffn(attention_output)
 
 
 # Copied from transformers.models.bert.modeling_bert.BertEncoder with Bert->Roberta

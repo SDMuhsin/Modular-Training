@@ -58,8 +58,8 @@ do
 
 	    # Execute one instance of dis_mha_modular.py and one instance of dis_ffn_modular.py in parallel for the same encoder index
 	    parallel -j 2 -u ::: \
-		"echo 'Modular training for SA module, encoder $encoder_idx'; python3 mha_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"\
-		"echo 'Modular training for BL module, encoder $encoder_idx'; python3 ffn_modular.py --encoder_idx=$encoder_idx --model_name=distilbert/distilbert-base-uncased --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"
+		"echo 'Modular training for SA module, encoder $encoder_idx'; python3 mha_modular.py --encoder_idx=$encoder_idx --model_name=$model_name --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"\
+		"echo 'Modular training for BL module, encoder $encoder_idx'; python3 ffn_modular.py --encoder_idx=$encoder_idx --model_name=$model_name --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"
 	fi	
 	encoder_idx=$((encoder_idx + 1))
 done
