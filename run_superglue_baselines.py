@@ -234,18 +234,21 @@ def parse_args():
 save_dir = "./downloads"
 
 def main():
+   
     args = parse_args()
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
     config_path = os.path.join(save_dir, f"{args.task_name}_config")
     tokenizer_path = os.path.join(save_dir, f"{args.task_name}_tokenizer")
     model_path = os.path.join(save_dir, f"{args.task_name}_model")
+
     random.seed(args.random_seed)
     np.random.seed(args.random_seed)
     torch.manual_seed(args.random_seed)
     torch.cuda.manual_seed_all(args.random_seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
     os.environ['PYTHONHASHSEED'] = str(args.random_seed)
     # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
     # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
@@ -343,16 +346,14 @@ def main():
             label_list = raw_datasets["train"].unique("label")
             label_list.sort()  # Let's sort it for determinism
             num_labels = len(label_list)
+    
     print(raw_datasets['train']) 
     print(f"Labels : ",num_labels)
     print(set(raw_datasets['train']['label']))
     print(set(raw_datasets['validation']['label']))
     
     print(set(raw_datasets['test']['label']))
-    # Load pretrained model and tokenizer
-    #
-    # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
-    # download model & vocab.
+
 
     config = AutoConfig.from_pretrained(
         args.model_name_or_path,

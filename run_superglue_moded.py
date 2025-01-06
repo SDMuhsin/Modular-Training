@@ -49,7 +49,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from evaluate import load
 from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank 
-
+from low_rank_modules.modeling_roberta import RobertaForSequenceClassification  
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.42.0.dev0")
 
@@ -240,11 +240,13 @@ save_dir = "./downloads"
 
 def main():
     args = parse_args()
-    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
-    # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    config_path = os.path.join(save_dir, f"{args.task_name}_config")
-    tokenizer_path = os.path.join(save_dir, f"{args.task_name}_tokenizer")
-    model_path = os.path.join(save_dir, f"{args.task_name}_model")
+
+	model_name_short = model_args.model_name_or_path.split("/")[-1]
+    config_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_config")
+    tokenizer_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_tokenizer")
+    model_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_model")
+    metric_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_metric.pkl")
+
     random.seed(args.random_seed)
     np.random.seed(args.random_seed)
     torch.manual_seed(args.random_seed)
@@ -352,21 +354,31 @@ def main():
     print(f"Labels : ",num_labels)
     print(set(raw_datasets['train']['label']))
     print(set(raw_datasets['validation']['label']))
-    
     print(set(raw_datasets['test']['label']))
-    # Load pretrained model and tokenizer
-    #
-    # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
-    # download model & vocab.
 
+    # Load or save tokenizer
+    if not os.path.exists(tokenizer_path):
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model_name_or_path,
+            #cache_dir=args.cache_dir,
+            #use_fast=args.use_fast_tokenizer,
+            #revision=args.model_revision,
+            #token=args.token,
+            trust_remote_code=args.trust_remote_code,
+        )
+        tokenizer.save_pretrained(tokenizer_path)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+
+    
     if not os.path.exists(config_path):
         config = AutoConfig.from_pretrained(
             args.model_name_or_path,
             num_labels=num_labels,
             finetuning_task=args.task_name,
-            cache_dir=args.cache_dir,
-            revision=args.model_revision,
-            token=args.token,
+            #cache_dir=args.cache_dir,
+            #revision=args.model_revision,
+            #token=args.token,
             trust_remote_code=args.trust_remote_code,
         )
         config.save_pretrained(config_path)
@@ -374,35 +386,37 @@ def main():
         print("LOAD FROM SAVE")
         config = AutoConfig.from_pretrained(config_path)
 
-    # Load or save tokenizer
-    if not os.path.exists(tokenizer_path):
-        tokenizer = AutoTokenizer.from_pretrained(
-            args.model_name_or_path,
-            cache_dir=args.cache_dir,
-            use_fast=args.use_fast_tokenizer,
-            revision=args.model_revision,
-            token=args.token,
-            trust_remote_code=args.trust_remote_code,
-        )
-        tokenizer.save_pretrained(tokenizer_path)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
     # Load or save model
+
     if not os.path.exists(model_path):
-        model = AutoModelForSequenceClassification.from_pretrained(
-            args.model_name_or_path,
-            from_tf=bool(".ckpt" in args.model_name_or_path),
-            config=config,
-            cache_dir=args.cache_dir,
-            revision=args.model_revision,
-            token=args.token,
-            trust_remote_code=args.trust_remote_code,
-            ignore_mismatched_sizes=args.ignore_mismatched_sizes,
-        )
+
+        if ('roberta' in args.model_name_or_path.lower()):
+            model = RobertaForSequenceClassification.from_pretrained(
+                args.model_name_or_path,
+                config=config,
+                trust_remote_code = args.trust_remote_code,
+                ignore_mismatched_sizes= args.ignore_mismatched_sizes
+                
+            )
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(
+                args.model_name_or_path,
+                from_tf=bool(".ckpt" in args.model_name_or_path),
+                config=config,
+                cache_dir=args.cache_dir,
+                revision=args.model_revision,
+                token=args.token,
+                trust_remote_code=args.trust_remote_code,
+                ignore_mismatched_sizes=args.ignore_mismatched_sizes,
+            )
         model.save_pretrained(model_path)
     else:
-        model = AutoModelForSequenceClassification.from_pretrained(model_path)
+        
+        if ('roberta' in args.model_name_or_path.lower()):
+            model = RobertaForSequenceClassification.from_pretrained(model_path)    
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(model_path)
    
     non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
     print(f"Non label column names",non_label_column_names)
