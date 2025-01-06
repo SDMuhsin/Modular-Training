@@ -459,9 +459,7 @@ class RobertaAttention(nn.Module):
         return outputs
 
 
-# -----------------------------------------------------------------------------
-# Standalone modules for the FFN
-# -----------------------------------------------------------------------------
+# Copied from transformers.models.bert.modeling_bert.BertIntermediate
 class RobertaIntermediate(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -477,6 +475,7 @@ class RobertaIntermediate(nn.Module):
         return hidden_states
 
 
+# Copied from transformers.models.bert.modeling_bert.BertOutput
 class RobertaOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -491,56 +490,21 @@ class RobertaOutput(nn.Module):
         return hidden_states
 
 
-# -----------------------------------------------------------------------------
-# A single FFN submodule that instantiates intermediate/output internally
-# -----------------------------------------------------------------------------
-class RobertaFFN(nn.Module):
-    """
-    A new submodule that wraps the Intermediate and Output layers (the feed-forward part)
-    but requires no external modules passed into it. This ensures:
-      - The feed-forward layers are neatly encapsulated in one place.
-      - We can preserve naming of parameters by hooking into RobertaLayer's
-        custom state_dict logic.
-    """
-
-    def __init__(self, config):
-        super().__init__()
-        self.intermediate = RobertaIntermediate(config)
-        self.output = RobertaOutput(config)
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """
-        The original feed_forward_chunk logic:
-          intermediate_output = self.intermediate(hidden_states)
-          layer_output = self.output(intermediate_output, hidden_states)
-        """
-        intermediate_output = self.intermediate(hidden_states)
-        layer_output = self.output(intermediate_output, hidden_states)
-        return layer_output
-
-
-# -----------------------------------------------------------------------------
-# The main RobertaLayer
-# -----------------------------------------------------------------------------
+# Copied from transformers.models.bert.modeling_bert.BertLayer with Bert->Roberta
 class RobertaLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.chunk_size_feed_forward = config.chunk_size_feed_forward
         self.seq_len_dim = 1
-
         self.attention = RobertaAttention(config)
         self.is_decoder = config.is_decoder
         self.add_cross_attention = config.add_cross_attention
         if self.add_cross_attention:
             if not self.is_decoder:
-                raise ValueError(
-                    f"{self} should be used as a decoder model if cross attention is added"
-                )
+                raise ValueError(f"{self} should be used as a decoder model if cross attention is added")
             self.crossattention = RobertaAttention(config, position_embedding_type="absolute")
-
-        # Instead of directly instantiating intermediate and output at this level,
-        # we group them into one RobertaFFN module:
-        self.ffn = RobertaFFN(config)
+        self.intermediate = RobertaIntermediate(config)
+        self.output = RobertaOutput(config)
 
     def forward(
         self,
@@ -552,7 +516,7 @@ class RobertaLayer(nn.Module):
         past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor]:
-        # -- Self-Attention --
+        # decoder uni-directional self-attention cached key/values tuple is at positions 1,2
         self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
         self_attention_outputs = self.attention(
             hidden_states,
@@ -563,20 +527,22 @@ class RobertaLayer(nn.Module):
         )
         attention_output = self_attention_outputs[0]
 
+        # if decoder, the last output is tuple of self-attn cache
         if self.is_decoder:
             outputs = self_attention_outputs[1:-1]
             present_key_value = self_attention_outputs[-1]
         else:
-            outputs = self_attention_outputs[1:]
+            outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
 
-        # -- Cross-Attention (if any) --
         cross_attn_present_key_value = None
         if self.is_decoder and encoder_hidden_states is not None:
             if not hasattr(self, "crossattention"):
                 raise ValueError(
-                    f"If `encoder_hidden_states` are passed, {self} must be instantiated with "
-                    f"cross-attention by setting `config.add_cross_attention=True`."
+                    f"If encoder_hidden_states are passed, {self} has to be instantiated with cross-attention layers"
+                    " by setting config.add_cross_attention=True"
                 )
+
+            # cross_attn cached key/values tuple is at positions 3,4 of past_key_value tuple
             cross_attn_past_key_value = past_key_value[-2:] if past_key_value is not None else None
             cross_attention_outputs = self.crossattention(
                 attention_output,
@@ -588,83 +554,28 @@ class RobertaLayer(nn.Module):
                 output_attentions,
             )
             attention_output = cross_attention_outputs[0]
-            outputs = outputs + cross_attention_outputs[1:-1]
+            outputs = outputs + cross_attention_outputs[1:-1]  # add cross attentions if we output attention weights
 
+            # add cross-attn cache to positions 3,4 of present_key_value tuple
             cross_attn_present_key_value = cross_attention_outputs[-1]
             present_key_value = present_key_value + cross_attn_present_key_value
 
-        # -- Feed Forward --
         layer_output = apply_chunking_to_forward(
             self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
         )
         outputs = (layer_output,) + outputs
 
+        # if decoder, return the attn key/values as the last output
         if self.is_decoder:
             outputs = outputs + (present_key_value,)
 
         return outputs
 
-    def feed_forward_chunk(self, attention_output: torch.Tensor) -> torch.Tensor:
-        """
-        Same as before, except it calls our new FFN module.
-        """
-        return self.ffn(attention_output)
+    def feed_forward_chunk(self, attention_output):
+        intermediate_output = self.intermediate(attention_output)
+        layer_output = self.output(intermediate_output, attention_output)
+        return layer_output
 
-    # -------------------------------------------------------------------------
-    # 1) Custom state_dict to rename keys from ffn -> intermediate/output
-    # -------------------------------------------------------------------------
-    def state_dict(self, destination=None, prefix="", keep_vars=False):
-        """
-        By default, PyTorch would store parameters under:
-          "...ffn.intermediate.dense.weight"
-          "...ffn.output.dense.weight"
-        which breaks older checkpoints that expect
-          "...intermediate.dense.weight"
-          "...output.dense.weight"
-
-        So we rename them back on-the-fly.
-        """
-        orig_sd = super().state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
-        new_sd = OrderedDict()
-        for key, value in orig_sd.items():
-            # rename '...ffn.intermediate.' -> '...intermediate.'
-            if ".ffn.intermediate." in key:
-                new_key = key.replace(".ffn.intermediate.", ".intermediate.")
-            # rename '...ffn.output.' -> '...output.'
-            elif ".ffn.output." in key:
-                new_key = key.replace(".ffn.output.", ".output.")
-            else:
-                new_key = key
-            new_sd[new_key] = value
-        return new_sd
-
-    # -------------------------------------------------------------------------
-    # 2) Custom load_state_dict to rename keys from intermediate/output -> ffn
-    # -------------------------------------------------------------------------
-    def load_state_dict(self, state_dict, strict=True):
-        """
-        Old checkpoints will have keys like:
-          "...intermediate.dense.weight"
-          "...output.dense.weight"
-        but in this code, the actual modules are at:
-          "...ffn.intermediate.dense.weight"
-          "...ffn.output.dense.weight"
-
-        So we rename them before calling super().
-        """
-        new_sd = OrderedDict()
-        for key, value in state_dict.items():
-            # rename '...intermediate.' -> '...ffn.intermediate.'
-            if ".intermediate." in key and ".ffn.intermediate." not in key:
-                new_key = key.replace(".intermediate.", ".ffn.intermediate.")
-            # rename '...output.' -> '...ffn.output.'
-            elif ".output." in key and ".ffn.output." not in key:
-                new_key = key.replace(".output.", ".ffn.output.")
-            else:
-                new_key = key
-            new_sd[new_key] = value
-
-        return super().load_state_dict(new_sd, strict=strict)
 
 # Copied from transformers.models.bert.modeling_bert.BertEncoder with Bert->Roberta
 class RobertaEncoder(nn.Module):
