@@ -238,8 +238,10 @@ def main():
         assert input_tensor != None
         mask = torch.bernoulli((1 - percentage) * torch.ones_like(input_tensor)).to(input_tensor.device)
         assert mask != None
-        # Apply the mask to the input_tensor
-        return input_tensor * mask
+        # Apply the mask to the input_tensori
+        dropped_out_tensor = input_tensor * mask
+        assert dropped_out_tensor != None
+        return dropped_out_tensor
 
     def augment_tensor(input_tensor, multiplier=1):
         # Check that input_tensor has at least one dimension (batch size)
@@ -294,8 +296,11 @@ def main():
             #Load input and output
             try:
                 x_inputs = dropout_tensor( torch.load(f"{input_save_folder}/a_batch_{bIdx}.pt"), p ).to(device)
-                a_inputs = torch.load(f"{input_save_folder}/b_batch_{bIdx}.pt").to(device)
-                
+                a_inputs = torch.load(f"{input_save_folder}/b_batch_{bIdx}.pt")
+                if(a_inputs == None):
+                    print(f"Found null input : A : bIdx = {bIdx}")
+
+                a_inputs = a_inputs.to(device)
             except Exception as e:
                 print(f"[e{epoch}b{bIdx}]Unable to dropout inputs?",e)
                 ec +=1
@@ -307,8 +312,6 @@ def main():
                 ec += 1
                 continue
 
-            assert x_inputs != None
-            assert a_inputs != None
             aug_outputs = None
             aug_x_inputs = None
             aug_a_inputs = None

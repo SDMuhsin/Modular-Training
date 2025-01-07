@@ -345,65 +345,152 @@ import random
 nltk.download('stopwords')
 stop_words = set(stopwords.words('english'))
 
+
 def augment_sentence(sentence, glove_model_path='./glove-embeddings/glove.6B.100d.txt', aug_n=1, replace_percentage=0.2):
-    """Applies augmentation to a single sentence using GloVe embeddings, replacing about 40% of non-stop words."""
+    """
+    Applies augmentation to a single sentence using GloVe embeddings, with enhanced functionality to handle cases
+    where multiple augmentations are needed for the same word.
+    
+    Args:
+        sentence (str): Input sentence to augment
+        glove_model_path (str): Path to GloVe embeddings file
+        aug_n (int): Number of augmented sentences to generate
+        replace_percentage (float): Percentage of non-stop words to replace
+    
+    Returns:
+        list: List of augmented sentences
+    """
     # Initialize the GloVe augmenter
     aug = naw.WordEmbsAug(
         model_type='glove',
         model_path=glove_model_path,
-        action='substitute',
+        action='substitute'
     )
-
-    words = sentence.split()
     
+    words = sentence.split()
     # Identify non-stop word indices
     non_stop_word_indices = [i for i, word in enumerate(words) if word.lower() not in stop_words]
     
+    if not non_stop_word_indices:
+        return [sentence]  # Return original if no non-stop words
+        
     # Determine the number of words to replace
     num_to_replace = max(1, int(len(non_stop_word_indices) * replace_percentage))
-
+    
     augmented_sentences = set()  # Use a set to avoid duplicate sentences
-    max_attempts = 20
-    while len(augmented_sentences) < aug_n and max_attempts > 0 and num_to_replace <= len(non_stop_word_indices):
-        random_indices = random.sample(non_stop_word_indices, num_to_replace)
+    word_augmentations = {}  # Store multiple augmentations for each word
+    
+    # Pre-generate multiple augmentations for each non-stop word
+    for idx in non_stop_word_indices:
+        # Generate more augmentations than needed to ensure variety
+        num_augmentations = aug_n * 2
+        word_augmentations[idx] = []
+        
+        # Generate multiple unique augmentations for the word
+        max_attempts = num_augmentations * 2  # Allow more attempts to find unique augmentations
+        while len(word_augmentations[idx]) < num_augmentations and max_attempts > 0:
+            augmented = aug.augment([words[idx]])[0]
+            if augmented not in word_augmentations[idx]:
+                word_augmentations[idx].append(augmented)
+            max_attempts -= 1
+    
+    # Generate augmented sentences
+    max_attempts = aug_n * 2  # Allow more attempts than needed augmentations
+    while len(augmented_sentences) < aug_n and max_attempts > 0:
         new_words = words.copy()
-
-        for idx in random_indices:
-            new_words[idx] = aug.augment([words[idx]])[0]  # Augment the single word directly
-
+        
+        # Randomly select indices to replace
+        indices_to_replace = random.sample(non_stop_word_indices, num_to_replace)
+        
+        # For each index, randomly select an unused augmentation if possible
+        for idx in indices_to_replace:
+            if word_augmentations[idx]:
+                # Randomly select from available augmentations
+                augmentation = random.choice(word_augmentations[idx])
+                new_words[idx] = augmentation
+        
         augmented_sentence = ' '.join(new_words)
-        augmented_sentences.add(augmented_sentence)  # Add to set, automatically handling uniqueness
+        if augmented_sentence != sentence:  # Avoid adding the original sentence
+            augmented_sentences.add(augmented_sentence)
+        
         max_attempts -= 1
+    
+    print(f"-- AUGMENT ---")
+    print(f"Original sentence : " + sentence)
+    print(f"Augmented sentences : ", list(augmented_sentences))
     return list(augmented_sentences)
 
 def augment_superglue_sentence(sentence, exclude_words, glove_model_path='./glove-embeddings/glove.6B.100d.txt', aug_n=1, replace_percentage=0.4):
-    """Applies augmentation to a single sentence for SuperGLUE datasets using GloVe embeddings, excluding specified words."""
+    """
+    Applies augmentation to a single sentence for SuperGLUE datasets using GloVe embeddings, with enhanced functionality
+    to handle cases where multiple augmentations are needed for the same word. Excludes specified words from augmentation.
+    
+    Args:
+        sentence (str): Input sentence to augment
+        exclude_words (list): List of words to exclude from augmentation
+        glove_model_path (str): Path to GloVe embeddings file
+        aug_n (int): Number of augmented sentences to generate
+        replace_percentage (float): Percentage of non-stop words to replace
+    
+    Returns:
+        list: List of augmented sentences
+    """
+    # Initialize the GloVe augmenter
     aug = naw.WordEmbsAug(
         model_type='glove',
         model_path=glove_model_path,
-        action='substitute',
+        action='substitute'
     )
-
+    
     words = sentence.split()
-
     # Identify non-stop word indices excluding the specified words
-    non_stop_word_indices = [i for i, w in enumerate(words) if w.lower() not in stop_words and w not in exclude_words]
-
+    non_stop_word_indices = [i for i, w in enumerate(words) 
+                            if w.lower() not in stop_words and w not in exclude_words]
+    
+    if not non_stop_word_indices:
+        return [sentence]  # Return original if no valid words to replace
+        
+    # Determine the number of words to replace
     num_to_replace = max(1, int(len(non_stop_word_indices) * replace_percentage))
-
-    augmented_sentences = set()
-    max_attempts = 20
-    while len(augmented_sentences) < aug_n and max_attempts > 0 and num_to_replace <= len(non_stop_word_indices):
-        random_indices = random.sample(non_stop_word_indices, num_to_replace)
+    
+    augmented_sentences = set()  # Use a set to avoid duplicate sentences
+    word_augmentations = {}  # Store multiple augmentations for each word
+    
+    # Pre-generate multiple augmentations for each valid word
+    for idx in non_stop_word_indices:
+        # Generate more augmentations than needed to ensure variety
+        num_augmentations = aug_n * 2
+        word_augmentations[idx] = []
+        
+        # Generate multiple unique augmentations for the word
+        max_attempts = num_augmentations * 2  # Allow more attempts to find unique augmentations
+        while len(word_augmentations[idx]) < num_augmentations and max_attempts > 0:
+            augmented = aug.augment([words[idx]])[0]
+            if augmented not in word_augmentations[idx] and augmented not in exclude_words:
+                word_augmentations[idx].append(augmented)
+            max_attempts -= 1
+    
+    # Generate augmented sentences
+    max_attempts = aug_n * 2  # Allow more attempts than needed augmentations
+    while len(augmented_sentences) < aug_n and max_attempts > 0:
         new_words = words.copy()
-
-        for idx in random_indices:
-            new_words[idx] = aug.augment([words[idx]])[0]
-
+        
+        # Randomly select indices to replace
+        indices_to_replace = random.sample(non_stop_word_indices, num_to_replace)
+        
+        # For each index, randomly select an unused augmentation if possible
+        for idx in indices_to_replace:
+            if word_augmentations[idx]:
+                # Randomly select from available augmentations
+                augmentation = random.choice(word_augmentations[idx])
+                new_words[idx] = augmentation
+        
         augmented_sentence = ' '.join(new_words)
-        augmented_sentences.add(augmented_sentence)
+        if augmented_sentence != sentence:  # Avoid adding the original sentence
+            augmented_sentences.add(augmented_sentence)
+        
         max_attempts -= 1
-
+    
     return list(augmented_sentences)
 
 
@@ -547,7 +634,7 @@ def main():
             augmented_data = pickle.load(f)
         print("Loaded augmented data from file.")
     
-    #raw_datasets['train'] = raw_datasets['train'].select(range(0,2))
+    raw_datasets['train'] = raw_datasets['train'].select(range(140,150))
 
     '''
     print("------ BEFORE AUGMENT ---------")
@@ -601,10 +688,21 @@ def main():
                     if(data_args.task_name in ["wic","wsc"]):
                         
                         exclude_words = [train_dataset[i]["word"]] if data_args.task_name == "wic" else [ train_dataset[i]["span1_text"], train_dataset[i]["span2_text"] ]
-                        augmented_entries.append( augment_superglue_sentence(value,aug_n=aug_n,exclude_words=exclude_words) ) 
-                    else:
-                        augmented_entries.append(augment_sentence(value,aug_n=aug_n))
+                        
+                        augmented_entry = augment_superglue_sentence(value,aug_n=aug_n,exclude_words=exclude_words)
 
+                        if( len(augmented_entry) != 0):
+                            augmented_entries.append( augmented_entry ) 
+                        else:
+                            augmented_entries.append(None)
+                    else:
+                        augmented_entry = augment_sentence(value,aug_n=aug_n)
+                        
+                        if (len(augmented_entry) != 0):
+                            augmented_entries.append( augmented_entry )
+
+                        else:
+                            augmented_entries.append(None)
                 else:
                     augmented_entries.append(None)
             
@@ -960,6 +1058,14 @@ def main():
 
             a = inputs[0]
             b = inputs[1]
+           
+            if ( b == None):
+                print(f"--- B is null ---")
+                print(f"A : ", type(a),a.shape)
+                print(f"O : ", type(o),o.shape)
+            assert a != None
+            assert b != None, f"b (attention) output is Null for batch id = {self.batch_idx}"
+
             torch.save(a, f"{input_save_folder}/a_batch_{self.batch_idx}.pt") # Hidden state
             torch.save(b, f"{input_save_folder}/b_batch_{self.batch_idx}.pt") # Attention mask
 

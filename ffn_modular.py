@@ -227,8 +227,10 @@ def main():
         
         # Create a mask of the same shape as the input_tensor
         # Each element of the mask is 0 with the probability of 'percentage', otherwise 1
+        assert input_tensor != None
         mask = torch.bernoulli((1 - percentage) * torch.ones_like(input_tensor)).to(input_tensor.device)
-        
+        assert mask != None
+
         # Apply the mask to the input_tensor
         return input_tensor * mask
     def augment_tensor(input_tensor, multiplier=1):
