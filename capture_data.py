@@ -501,29 +501,16 @@ def save_data(data, file_path):
 save_dir = "./downloads"
 
 def main():
+
     os.environ["MKL_NUM_THREADS"] = "1"
     os.environ["OMP_NUM_THREADS"] = "1"
     os.environ["NUMEXPR_NUM_THREADS"] = "1"
-    # See all possible arguments in src/transformers/training_args.py
-    # or by passing the --help flag to this script.
-    # We now keep distinct sets of args, for a cleaner separation of concerns.
 
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
-        # If we pass only one argument to the script and it's the path to a json file,
-        # let's parse it to get our arguments.
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-
-    if model_args.use_auth_token is not None:
-        warnings.warn(
-            "The `use_auth_token` argument is deprecated and will be removed in v4.34. Please use `token` instead.",
-            FutureWarning,
-        )
-        if model_args.token is not None:
-            raise ValueError("`token` and `use_auth_token` are both specified. Please set only the argument `token`.")
-        model_args.token = model_args.use_auth_token
 
     training_args.dataloader_num_workers = 0
     random.seed(data_args.random_seed)
@@ -547,9 +534,7 @@ def main():
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
-    if training_args.should_log:
-        # The default of training_args.log_level is passive, so we set log level at info here to have that default.
-        transformers.utils.logging.set_verbosity_info()
+    transformers.utils.logging.set_verbosity_info()
 
     log_level = training_args.get_process_log_level()
     logger.setLevel(log_level)
@@ -565,25 +550,7 @@ def main():
     )
     logger.info(f"Training/evaluation parameters {training_args}")
 
-    # Detecting last checkpoint.
-    last_checkpoint = None
-    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
-        last_checkpoint = get_last_checkpoint(training_args.output_dir)
-        if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
-            raise ValueError(
-                f"Output directory ({training_args.output_dir}) already exists and is not empty. "
-                "Use --overwrite_output_dir to overcome."
-            )
-        elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
-            logger.info(
-                f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
-                "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
-            )
-
-    # Set seed before initializing model.
     set_seed(data_args.random_seed)
-
-    # Get the datasets: you can either provide your own CSV/JSON training and evaluation files (see below)
 
 
     if data_args.task_name is not None:
@@ -634,7 +601,7 @@ def main():
             augmented_data = pickle.load(f)
         print("Loaded augmented data from file.")
     
-    raw_datasets['train'] = raw_datasets['train'].select(range(140,150))
+    raw_datasets['train'] = raw_datasets['train'].select(range(149,150))
 
     '''
     print("------ BEFORE AUGMENT ---------")
@@ -654,14 +621,18 @@ def main():
     if augment and do_augment:
         train_dataset = raw_datasets['train']
         keys = task_to_keys[data_args.task_name]
-        
-        # Initialize augmented data dictionary with dynamic key creation based on keys provided in task_to_keys
+        # Initialize augmented data dictionary
         augmented_data = {key: [] for key in train_dataset.column_names}
-        
-        other_keys = [k for k in train_dataset.column_names if k not in keys ]
+        other_keys = [k for k in train_dataset.column_names if k not in keys]
 
-        #augmented_data.update({'label': [], 'idx': []})
-        
+        # First pass: Add all original data
+        for i in range(len(train_dataset)):
+            entry = train_dataset[i]
+            # Add original data for all columns
+            for key in train_dataset.column_names:
+                augmented_data[key].append(entry[key])
+
+        # Second pass: Add augmentations
         for i in range(len(train_dataset)):
             print(f"Data augmentation: {i}/{len(train_dataset)}", end="\r")
             if i % 100 == 0:
@@ -669,80 +640,53 @@ def main():
             
             entry = train_dataset[i]
             entries = [entry[key] for key in keys if key is not None]
-             
-            # Append original data
-            for key, value in zip(keys, entries):
-                if value is not None:
-                    augmented_data[key].append(value)
             
-            for k in other_keys:
-                augmented_data[k].append(entry[k])
-            #augmented_data['label'].append(entry['label'])
-            #augmented_data['idx'].append(entry['idx'])
-            
-            # Handle augmentation
+            # Handle augmentation for each key separately
             augmented_entries = []
             for value in entries:
                 if value is not None:
-                    
                     if(data_args.task_name in ["wic","wsc"]):
-                        
-                        exclude_words = [train_dataset[i]["word"]] if data_args.task_name == "wic" else [ train_dataset[i]["span1_text"], train_dataset[i]["span2_text"] ]
-                        
-                        augmented_entry = augment_superglue_sentence(value,aug_n=aug_n,exclude_words=exclude_words)
-
-                        if( len(augmented_entry) != 0):
-                            augmented_entries.append( augmented_entry ) 
-                        else:
-                            augmented_entries.append(None)
+                        exclude_words = [train_dataset[i]["word"]] if data_args.task_name == "wic" else [train_dataset[i]["span1_text"], train_dataset[i]["span2_text"]]
+                        augmented_entry = augment_superglue_sentence(value, aug_n=aug_n, exclude_words=exclude_words)
+                        augmented_entries.append(augmented_entry if len(augmented_entry) > 0 else [])
                     else:
-                        augmented_entry = augment_sentence(value,aug_n=aug_n)
-                        
-                        if (len(augmented_entry) != 0):
-                            augmented_entries.append( augmented_entry )
-
-                        else:
-                            augmented_entries.append(None)
+                        augmented_entry = augment_sentence(value, aug_n=aug_n)
+                        augmented_entries.append(augmented_entry if len(augmented_entry) > 0 else [])
                 else:
-                    augmented_entries.append(None)
-            
-            # Determine minimum size for augmented samples
-            aug_samples_count = min(len(aug) for aug in augmented_entries if aug is not None)
+                    augmented_entries.append([])
 
-			# If aug is None, repeat original value
-            if aug_samples_count > 0:
-                for j in range(aug_samples_count):
-                    for key, aug in zip(keys, augmented_entries):
-                        if aug is not None:
-                            augmented_data[key].append(aug[j])
-                        else:
-                            # If aug is None, repeat the original value
-                            augmented_data[key].append(entry[key])
-
-            # Append augmented data
-            for j in range(aug_samples_count):
-                for key, aug in zip(keys, augmented_entries):
-                    if aug is not None:
-                        augmented_data[key].append(aug[j])
+            # For each valid augmentation, add a complete row
+            key_augment_pairs = list(zip(keys, augmented_entries))
             
-            other_keys = [k for k in train_dataset.column_names if k not in keys ]
-            for k in other_keys:
-                augmented_data[k].extend( [ entry[k] ] * aug_samples_count )
-            #augmented_data['label'].extend([entry['label']] * aug_samples_count)
-            #augmented_data['idx'].extend([entry['idx']] * aug_samples_count)
+            # Process each augmentation index
+            max_augs = max(len(augs) for augs in augmented_entries) if augmented_entries else 0
+            
+            for aug_idx in range(max_augs):
+                # For each augmentation index, create a new row
+                for key, augs in key_augment_pairs:
+                    # If this key has an augmentation at this index, use it
+                    if aug_idx < len(augs):
+                        augmented_data[key].append(augs[aug_idx])
+                    else:
+                        # If no augmentation available for this index, use original
+                        augmented_data[key].append(entry[key])
+                
+                # Add all other columns' values
+                for k in other_keys:
+                    augmented_data[k].append(entry[k])
+
+        # Verify all columns have the same length
+        lengths = {k: len(v) for k, v in augmented_data.items()}
+        print("Column lengths:", lengths)
+        if len(set(lengths.values())) != 1:
+            raise ValueError(f"Inconsistent column lengths: {lengths}")
 
         # Save the augmented data
         with open(dataset_path, 'wb') as f:
             pickle.dump(augmented_data, f)
         print("Augmented data saved to file.")
 
-
     if(do_augment):
-
-        lengths = {k: len(v) for k, v in augmented_data.items()}
-        print("Column lengths:", lengths)
-        if len(set(lengths.values())) != 1:
-            raise ValueError(f"Inconsistent column lengths: {lengths}")
         augmented_dataset = datasets.Dataset.from_dict(augmented_data)
         raw_datasets['train'] = augmented_dataset
 
@@ -750,35 +694,26 @@ def main():
         example["idx"] = idx
         return example
 
-    # Assuming raw_datasets['train'] is a Dataset object
+    # Update indices
     raw_datasets['train'] = raw_datasets['train'].map(update_idx, with_indices=True)
     
-    ''' 
+    
     print("------ AFTER AUGMENT ---------")
     for data in raw_datasets['train']:
 
         for k in task_to_keys[data_args.task_name]:
+            
             if k !=None:
                 print("____")
                 print("\t",k)
                 print("\t",data[k])
                 print("_____")
-    exit() '''
-    # Label correction
+                assert data[k] != None
 
-    # Load pretrained model and tokenizer
-    #
-    # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
-    # download model & vocab.
-    # Load or save config
 
     if not os.path.exists(tokenizer_path):
         tokenizer = AutoTokenizer.from_pretrained(
             model_args.model_name_or_path,
-            #cache_dir=args.cache_dir,
-            #use_fast=args.use_fast_tokenizer,
-            #revision=args.model_revision,
-            #token=args.token,
             trust_remote_code=model_args.trust_remote_code,
         )
         tokenizer.save_pretrained(tokenizer_path)
@@ -807,8 +742,6 @@ def main():
             model = RobertaForSequenceClassification.from_pretrained(
                 model_args.model_name_or_path,
                 config=config,
-                #revision=args.model_revision,
-                #token=args.token,
                 trust_remote_code=model_args.trust_remote_code,
                 ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
             ) 
@@ -842,8 +775,6 @@ def main():
         print("Using already fine tuned Model")
         model.load_state_dict(torch.load(f"./saves/models/baseline/{model_args.model_name_or_path}/{data_args.task_name}/baseline_model.pth"))    
 
-    # model = my_model
-
     if data_args.task_name is not None:
         sentence1_key, sentence2_key,sentence3_key = task_to_keys[data_args.task_name]
     else:
@@ -864,7 +795,6 @@ def main():
         # We will pad later, dynamically at batch creation, to the max sequence length in each batch
         padding = False
 
-    # Some models have set the order of the labels to use, so let's make sure we do use it.
     label_to_id = None
     if (
         model.config.label2id != PretrainedConfig(num_labels=num_labels).label2id
@@ -908,6 +838,10 @@ def main():
         # Map labels to IDs (not necessary for GLUE tasks)
         if label_to_id is not None and "label" in examples:
             result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
+
+        print(f" ----------- Preprocessed result ----------- ")
+        print("Input id lens : ", len(result['input_ids']), len(result["input_ids"][0]))
+        print("attention mask lens : ", len(result['attention_mask']), len(result["attention_mask"][0]))
         return result
     
     def preprocess_wic_function(examples):
@@ -1073,11 +1007,9 @@ def main():
 
             a = inputs[0]
             b = inputs[1]
-           
-            if ( b == None):
-                print(f"--- B is null ---")
-                print(f"A : ", type(a),a.shape)
-                print(f"O : ", type(o),o.shape)
+            
+            if(b == None):
+                print("======= b is None, shape of a  : ", a.shape)
             assert a != None
             assert b != None, f"b (attention) output is Null for batch id = {self.batch_idx}"
 
@@ -1090,6 +1022,7 @@ def main():
             create_directory_if_not_exists(output_save_folder)
 
             o = outputs[0]
+            assert o != None, f"output of attention at batch id = {self.batch_idx} is None"
             torch.save(o, f"{output_save_folder}/o_batch_{self.batch_idx}.pt")
             
             self.batch_idx += 1
@@ -1168,8 +1101,7 @@ def main():
                 model.roberta.encoder.layer[i].ffn.register_forward_hook(ffn_hooks[i])
 
     else:
-        print("HERE AS INTENDED")
-        # Original DistilBERT hook registration
+        
         modelbert = model.distilbert
         hooks = [AttentionHook(i) for i in range(len(modelbert.transformer.layer))]
         layer_hooks = [LayerHook(i) for i in range(len(modelbert.transformer.layer))]
