@@ -83,6 +83,7 @@ parser.add_argument("--task")
 parser.add_argument("--threshold_scale",type=float)
 parser.add_argument("--compression",type=int)
 parser.add_argument("--random_seed",type=int)
+parser.add_argument("--multiplier",type=int)
 args = parser.parse_args()
 
 def main():
@@ -270,7 +271,7 @@ def main():
 
     mha_output_save_folder = f"./saves/{args.model_name}/{args.task}/mha/outputs/encoder_{args.encoder_idx}"
     batch_count = count_files(mha_output_save_folder)
-
+    multiplier = args.multiplier
     for epoch in range(num_epochs):
 
         total_loss = 0
@@ -290,6 +291,8 @@ def main():
             except:
                 print("Unable load/dropout input/output")
                 continue
+            
+            assert h_inputs != None
 
             aug_outputs = None
             aug_h_inputs = None
@@ -297,7 +300,7 @@ def main():
             if (augment):
                 
 
-                aug_h_inputs = augment_tensor(h_inputs,1).to(device)
+                aug_h_inputs = augment_tensor(h_inputs,multiplier).to(device)
 
                 aug_outputs = original_ffn_layer(aug_h_inputs).to(device)
 

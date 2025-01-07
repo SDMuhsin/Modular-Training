@@ -48,7 +48,7 @@ from transformers import (
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank 
-from low_rank_modules.modeling_roberta import RobertaForSequenceClassification
+from low_rank_modules.modeling_roberta import RobertaForSequenceClassification, RobertaOutputLowRank, RobertaIntermediateLowRank, RobertaFFNLowRank, RobertaAttentionLowRank
 
 from torch.nn import KLDivLoss
 from torch.nn.functional import softmax, log_softmax, kl_div
@@ -507,39 +507,66 @@ def main():
     my_model = copy.deepcopy(model)
     
     module_trained_for = args.last_mod_trained_for
-
-    for i in range(6):
+    
+    num_layers = 12 if "roberta" in args.model_name_or_path.lower() else 6
+    for i in range(num_layers):
         
         #og_encoder_self_attention = model.bert.encoder.layer[i].attention.self    
         #my_model.bert.encoder.layer[i].attention.self = BertMixedSelfAttention(config,None,og_encoder_self_attention)
         
         if (args.encoder_modularity == 'M' or args.encoder_modularity == 'MF'):
            
-            module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
-            mha = MultiHeadSelfAttentionLowRank(config,compression=int(args.encoder_compression))
+            if("roberta" in args.model_name_or_path.lower()):
 
-            mha_1 = copy.deepcopy(mha)
+                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
+                mha = RobertaAttentionLowRank(config,compression=int(args.encoder_compression))
+                mha.load_state_dict(torch.load(module_path))
 
-            mha.load_state_dict(torch.load(module_path))
-            my_model.distilbert.transformer.layer[i].attention = mha
-            
-            allClose = check_weights_allclose(mha_1,my_model.distilbert.transformer.layer[i].attention)
-            if(allClose):
-                print("\n\n\n\n ALL CLOSE \n\n\n\n")
+                my_model.roberta.encoder.layer[i].attention = mha
+
+            else:
+                
+                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
+                mha = MultiHeadSelfAttentionLowRank(config,compression=int(args.encoder_compression))
+
+                mha_1 = copy.deepcopy(mha)
+
+                mha.load_state_dict(torch.load(module_path))
+                my_model.distilbert.transformer.layer[i].attention = mha
+                
+                allClose = check_weights_allclose(mha_1,my_model.distilbert.transformer.layer[i].attention)
+                if(allClose):
+                    print("\n\n\n\n ALL CLOSE \n\n\n\n")
 
         if (args.encoder_modularity == 'F' or args.encoder_modularity == 'MF'):
             
-            module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
-            ffn = FFNLowRank(config,compression=int(args.encoder_compression))
+            if("roberta" in args.model_name_or_path.lower()):
+                
+                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
 
-            ffn_1 = copy.deepcopy(ffn)
+                intermediate_lr = RobertaIntermediateLowRank(config,int(args.encoder_compression))
+                output_lr = RobertaOutputLowRank(config,int(args.encoder_compression))
+                ffn = RobertaFFNLowRank(intermediate_lr,output_lr);
 
-            ffn.load_state_dict(torch.load(module_path))
-            my_model.distilbert.transformer.layer[i].ffn = ffn
-            
-            allClose = check_weights_allclose(ffn_1,my_model.distilbert.transformer.layer[i].ffn)
-            if(allClose):
-                print("\n\n\n\n ALL CLOSE \n\n\n\n")
+                ffn.load_state_dict(torch.load(module_path))
+                my_model.roberta.encoder.layer[i].intermediate = ffn.intermediate
+                my_model.roberta.encoder.layer[i].output = ffn.output
+                my_model.roberta.encoder.layer[i].ffn = ffn
+
+
+            else:
+
+                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
+                ffn = FFNLowRank(config,compression=int(args.encoder_compression))
+
+                ffn_1 = copy.deepcopy(ffn)
+
+                ffn.load_state_dict(torch.load(module_path))
+                my_model.distilbert.transformer.layer[i].ffn = ffn
+                
+                allClose = check_weights_allclose(ffn_1,my_model.distilbert.transformer.layer[i].ffn)
+                if(allClose):
+                    print("\n\n\n\n ALL CLOSE \n\n\n\n")
         else:
             print("\n\n\n NO MODULARITY SELECTED, TRAINING FULL MODEL\n\n\n")
        

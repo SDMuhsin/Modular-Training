@@ -89,6 +89,7 @@ parser.add_argument("--task")
 parser.add_argument("--threshold_scale",type=float)
 parser.add_argument("--compression",type=int)
 parser.add_argument("--random_seed",type=int)
+parser.add_argument("--multiplier",type=int)
 args = parser.parse_args()
 
 def main():
@@ -232,9 +233,11 @@ def main():
             raise ValueError(f"Percentage must be between 0 and 1 but was {p}")
         
         # Create a mask of the same shape as the input_tensor
-        # Each element of the mask is 0 with the probability of 'percentage', otherwise 1
+        # Each element of the mask is 0 with the probability of 'percentage', otherwise 
+
+        assert input_tensor != None
         mask = torch.bernoulli((1 - percentage) * torch.ones_like(input_tensor)).to(input_tensor.device)
-        
+        assert mask != None
         # Apply the mask to the input_tensor
         return input_tensor * mask
 
@@ -277,6 +280,7 @@ def main():
     mha_output_save_folder = f"./saves/{args.model_name}/{args.task}/mha/outputs/encoder_{args.encoder_idx}"
     batch_count = count_files(mha_output_save_folder)
     
+    multiplier = args.multiplier
     print("Batch count : ",batch_count)
     for epoch in range(0,num_epochs):
 
@@ -302,12 +306,15 @@ def main():
             except Exception as e:
                 ec += 1
                 continue
+
+            assert x_inputs != None
+            assert a_inputs != None
             aug_outputs = None
             aug_x_inputs = None
             aug_a_inputs = None
             if (augment):
-                aug_x_inputs = augment_tensor(x_inputs,multiplier=1).to(device)
-                aug_a_inputs = augment_tensor(a_inputs,multiplier=1).to(device)
+                aug_x_inputs = augment_tensor(x_inputs,multiplier=multiplier).to(device)
+                aug_a_inputs = augment_tensor(a_inputs,multiplier=multiplier).to(device)
 
                 if("roberta" in args.model_name.lower()):
                     aug_outputs = original_sa( aug_x_inputs, aug_a_inputs)[0]

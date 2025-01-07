@@ -13,7 +13,7 @@ encoder_compression=$7
 do_plug_mods=$8
 aug_n=$9
 task=${10}
-
+multiplier=${11:-1}
 model_name="roberta-base" 
 #./dp_sa_pipeline.sh test 1 n y y y 2 y
 
@@ -21,7 +21,7 @@ model_name="roberta-base"
 encoder_idx=0
 random_seed=42
 rm ./saves/"${task}_augmented_dataset.pkl"
-while [ $encoder_idx -le 0 ]
+while [ $encoder_idx -le 11 ]
 do
 	rm  ./saves/$model_name/$task/* -r
 	echo "Generating data for encoder $encoder_idx"
@@ -54,12 +54,12 @@ do
 	    echo "\n \n \n Beginning modular training of SA and BL modules"
 	    echo "Encoder compression: $encoder_compression"
 
-	    export job_name epochs task noise_threshold_scale encoder_compression
+	    export job_name epochs task noise_threshold_scale encoder_compression multiplier model_name
 
 	    # Execute one instance of dis_mha_modular.py and one instance of dis_ffn_modular.py in parallel for the same encoder index
-	    parallel -j 1 -u ::: \
-		"echo 'Modular training for SA module, encoder $encoder_idx'; python3 mha_modular.py --encoder_idx=$encoder_idx --model_name=$model_name --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"\
-		"echo 'Modular training for BL module, encoder $encoder_idx'; python3 ffn_modular.py --encoder_idx=$encoder_idx --model_name=$model_name --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed"
+	    parallel -j 2 -u ::: \
+		"echo 'Modular training for SA module, encoder $encoder_idx'; python3 mha_modular.py --encoder_idx=$encoder_idx --model_name=$model_name --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed --multiplier=$multiplier"\
+		"echo 'Modular training for BL module, encoder $encoder_idx'; python3 ffn_modular.py --encoder_idx=$encoder_idx --model_name=$model_name --job_name=$job_name --num_labels=2 --epochs=$epochs --task=$task --threshold_scale=0 --compression=$encoder_compression --random_seed=$random_seed --multiplier=$multiplier"
 	fi	
 	encoder_idx=$((encoder_idx + 1))
 done

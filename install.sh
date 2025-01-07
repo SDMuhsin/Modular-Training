@@ -25,5 +25,6 @@ python3 -m pip install accelerate -U
 python3 -m pip install scikit-learn
 python3 -m pip install gensim
 python3 -m pip install datasets evaluate
+python3 -m pip install sentencepiece protobuf
 python3 -m pip install urllib3
 #in run_sbatch.sh add export NLTK_DATA=..../nltk_data
