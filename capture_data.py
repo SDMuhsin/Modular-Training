@@ -708,7 +708,17 @@ def main():
             
             # Determine minimum size for augmented samples
             aug_samples_count = min(len(aug) for aug in augmented_entries if aug is not None)
-            
+
+			# If aug is None, repeat original value
+            if aug_samples_count > 0:
+                for j in range(aug_samples_count):
+                    for key, aug in zip(keys, augmented_entries):
+                        if aug is not None:
+                            augmented_data[key].append(aug[j])
+                        else:
+                            # If aug is None, repeat the original value
+                            augmented_data[key].append(entry[key])
+
             # Append augmented data
             for j in range(aug_samples_count):
                 for key, aug in zip(keys, augmented_entries):
@@ -728,6 +738,11 @@ def main():
 
 
     if(do_augment):
+
+        lengths = {k: len(v) for k, v in augmented_data.items()}
+        print("Column lengths:", lengths)
+        if len(set(lengths.values())) != 1:
+            raise ValueError(f"Inconsistent column lengths: {lengths}")
         augmented_dataset = datasets.Dataset.from_dict(augmented_data)
         raw_datasets['train'] = augmented_dataset
 
