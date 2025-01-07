@@ -49,7 +49,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from transformers import BertForSequenceClassification, AutoConfig
 from low_rank_modules.distilbert import FFNLowRank 
-from low_rank_modules.modeling_roberata import RobertaForSequenceClassification,
+from low_rank_modules.modeling_roberta import RobertaForSequenceClassification, RobertaIntermediateLowRank, RobertaOutputLowRank, RobertaFFNLowRank
 check_min_version("4.41.0.dev0")
 
 #python3 isolated_sa.py --encoder_idx=0 && python3 isolated_sa.py --encoder_idx=1 && python3 isolated_sa.py --encoder_idx=2 && python3 isolated_sa.py --encoder_idx=3 && python3 isolated_sa.py --encoder_idx=4 && python3 isolated_sa.py --encoder_idx=5 && python3 isolated_sa.py --encoder_idx=6 && python3 isolated_sa.py --encoder_idx=7 && python3 isolated_sa.py --encoder_idx=8 && python3 isolated_sa.py --encoder_idx=9 && python3 isolated_sa.py --encoder_idx=10 && python3 isolated_sa.py --encoder_idx=11
@@ -70,20 +70,6 @@ import time
 import torch.optim as optim
 import torch.nn as nn
 # Print the location of the BertModel class definition
-
-'''
-
-linear_projection: 1.06% of total time
-prepare_query_key_value: 0.10% of total time
-handle_cross_attention_and_past_key: 0.00% of total time
-attention_score_calculation: 33.12% of total time
-normalize_and_mask_attention_scores: 19.71% of total time
-finalize_attention_output: 46.01% of total time
-Average runtime for original module: 0.048446 seconds
-Average runtime for shared module: 0.033481 seconds
-
-'''
-
 #python3 isolated_sa.py --encoder_idx=0 --model_name=google-bert/bert-base-uncased --name=test --num_labels=2 --epochs=50
 
 import argparse
@@ -180,27 +166,27 @@ def main():
     print(f"Encoder idx = {encoder_idx}")
     compression = int(args.compression)
     print(f"Compression = {compression}")
+    
+    if ("roberta" in args.model_name.lower()):
+        original_ffn_layer = model.roberta.encoder.layer[encoder_idx].ffn
 
-    original_ffn_layer = model.distilbert.transformer.layer[encoder_idx].ffn
-    new_ffn_layer = FFNLowRank(config,compression=compression) # New bert layer to be train
+        intermediate_low_rank = RobertaIntermediateLowRank(config,compression=compression)
+        output_low_rank       = RobertaOutputLowRank(config,compression=compression)
+        new_ffn_layer         = RobertaFFNLowRank( intermediate_low_rank, output_low_rank )
+        new_ffn_layer.intermediate = intermediate_low_rank
+        new_ffn_layer.output  = output_low_rank
+
+    else:
+        original_ffn_layer = model.distilbert.transformer.layer[encoder_idx].ffn
+        new_ffn_layer = FFNLowRank(config,compression=compression) # New bert layer to be train
     
     #Load saved inputs
-
     input_save_folder = f"./saves/{args.model_name}/{args.task}/ffn/inputs/encoder_{encoder_idx}/"
     output_save_folder = f"./saves/{args.model_name}/{args.task}/ffn/outputs/encoder_{encoder_idx}/"
 
-
-    #print(f"Dimensions of generated input {inputs.shape}")
-    #print(f"Dimensions of generated output {outputs.shape}")
-
-    
-
-    # Define an optimizer
     optimizer = optim.Adam(new_ffn_layer.parameters(), lr=1e-4)
-    # Number of epochs
     num_epochs = int(args.epochs)
 
-    # Training mode
     device = torch.device("cuda:1")
     original_ffn_layer = original_ffn_layer.to(device)
     new_ffn_layer = new_ffn_layer.to(device)
@@ -310,7 +296,9 @@ def main():
 
             if (augment):
                 
+
                 aug_h_inputs = augment_tensor(h_inputs,1).to(device)
+
                 aug_outputs = original_ffn_layer(aug_h_inputs).to(device)
 
             predicted_normal_outputs = new_ffn_layer(h_inputs)

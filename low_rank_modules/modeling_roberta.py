@@ -460,6 +460,7 @@ class RobertaAttention(nn.Module):
 
 
 # Copied from transformers.models.bert.modeling_bert.BertIntermediate
+# Copied from transformers.models.bert.modeling_bert.BertIntermediate
 class RobertaIntermediate(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -490,12 +491,32 @@ class RobertaOutput(nn.Module):
         return hidden_states
 
 
+class RobertaFFN(nn.Module):
+    """
+    A new submodule that wraps the Intermediate and Output layers (the "feed-forward" part).
+    By passing in the already-created RobertaIntermediate and RobertaOutput submodules,
+    we ensure the parameter names remain unchanged in the state dict.
+    """
+    def __init__(self, intermediate: RobertaIntermediate, output: RobertaOutput):
+        super().__init__()
+        # Keep the same submodules as attributes of this module.
+        self.intermediate = intermediate
+        self.output = output
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        # Exactly the same logic that was in feed_forward_chunk previously.
+        intermediate_output = self.intermediate(hidden_states)
+        layer_output = self.output(intermediate_output, hidden_states)
+        return layer_output
+
+
 # Copied from transformers.models.bert.modeling_bert.BertLayer with Bert->Roberta
 class RobertaLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.chunk_size_feed_forward = config.chunk_size_feed_forward
         self.seq_len_dim = 1
+
         self.attention = RobertaAttention(config)
         self.is_decoder = config.is_decoder
         self.add_cross_attention = config.add_cross_attention
@@ -503,8 +524,13 @@ class RobertaLayer(nn.Module):
             if not self.is_decoder:
                 raise ValueError(f"{self} should be used as a decoder model if cross attention is added")
             self.crossattention = RobertaAttention(config, position_embedding_type="absolute")
+
+        # Create your existing intermediate and output layers
         self.intermediate = RobertaIntermediate(config)
         self.output = RobertaOutput(config)
+
+        # Wrap them into a single FFN module
+        self.ffn = RobertaFFN(self.intermediate, self.output)
 
     def forward(
         self,
@@ -522,7 +548,7 @@ class RobertaLayer(nn.Module):
             hidden_states,
             attention_mask,
             head_mask,
-            output_attentions=output_attentions,
+            output_attentions=True, #Fprced for capture
             past_key_value=self_attn_past_key_value,
         )
         attention_output = self_attention_outputs[0]
@@ -560,6 +586,7 @@ class RobertaLayer(nn.Module):
             cross_attn_present_key_value = cross_attention_outputs[-1]
             present_key_value = present_key_value + cross_attn_present_key_value
 
+        # Apply the feed-forward chunking logic, but call the new FFN module under the hood
         layer_output = apply_chunking_to_forward(
             self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
         )
@@ -571,11 +598,71 @@ class RobertaLayer(nn.Module):
 
         return outputs
 
-    def feed_forward_chunk(self, attention_output):
-        intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
-        return layer_output
+    def feed_forward_chunk(self, attention_output: torch.Tensor) -> torch.Tensor:
+        """
+        This function is exactly the same as before, but internally we call self.ffn now
+        (which in turn calls self.intermediate and self.output).
+        """
+        return self.ffn(attention_output)
 
+class RobertaIntermediateLowRank(nn.Module):
+    def __init__(self, config, compression=2):
+        super().__init__()
+        self.compression = compression
+        self.hidden_size = config.hidden_size
+        self.intermediate_size = config.intermediate_size
+
+        # We remove the bias from the "reduce" projection to save parameters. 
+        # But you could keep a bias if you prefer.
+        self.dense_reduce = nn.Linear(self.hidden_size, self.intermediate_size // self.compression, bias=False)
+        self.dense_expand = nn.Linear(self.intermediate_size // self.compression, self.intermediate_size, bias=True)
+
+        # Keep the same activation
+        if isinstance(config.hidden_act, str):
+            self.intermediate_act_fn = ACT2FN[config.hidden_act]
+        else:
+            self.intermediate_act_fn = config.hidden_act
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        # Low-rank feed-forward
+        hidden_states = self.dense_reduce(hidden_states)
+        hidden_states = self.dense_expand(hidden_states)
+        hidden_states = self.intermediate_act_fn(hidden_states)
+        return hidden_states
+class RobertaOutputLowRank(nn.Module):
+    def __init__(self, config, compression=2):
+        super().__init__()
+        self.compression = compression
+        self.intermediate_size = config.intermediate_size
+        self.hidden_size = config.hidden_size
+
+        self.dense_reduce = nn.Linear(self.intermediate_size, self.hidden_size // self.compression, bias=False)
+        self.dense_expand = nn.Linear(self.hidden_size // self.compression, self.hidden_size, bias=True)
+
+        self.LayerNorm = nn.LayerNorm(self.hidden_size, eps=config.layer_norm_eps)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+    def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
+        # Low-rank feed-forward
+        hidden_states = self.dense_reduce(hidden_states)
+        hidden_states = self.dense_expand(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        return hidden_states
+class RobertaFFNLowRank(nn.Module):
+    """
+    A low-rank version of RobertaFFN that wraps our RobertaIntermediateLowRank and RobertaOutputLowRank.
+    """
+    def __init__(self, intermediate: RobertaIntermediateLowRank, output: RobertaOutputLowRank):
+        super().__init__()
+        # Just like the original FFN, we keep them as attributes.
+        self.intermediate = intermediate
+        self.output = output
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        intermediate_output = self.intermediate(hidden_states)
+        layer_output = self.output(intermediate_output, hidden_states)
+        return layer_output
 
 # Copied from transformers.models.bert.modeling_bert.BertEncoder with Bert->Roberta
 class RobertaEncoder(nn.Module):
