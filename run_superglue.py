@@ -868,28 +868,14 @@ def main():
     teacher.eval()
 
     ''' @@@@@@@@@@@@@@@@@@@ TRAINING LOOP W/ PROGRESSIVE REPLACEMENT @@@@@@@@@@@@@@@@@@@@@@@@ '''
+    # Progressive replacement setup
+    replacement_step_interval = args.max_train_steps // num_layers
+    next_replacement_step = replacement_step_interval
+    layers_replaced = 0
+
     for epoch in range(starting_epoch, args.num_train_epochs):
 
-        # --- Progressive Replacement Step (one layer per epoch) ---
-        if layers_replaced < num_layers:
-            logger.info(f"Replacing layer {layers_replaced} at start of epoch {epoch}...")
-            model = replace_one_layer(model, layers_replaced, config, args, check_weights_allclose)
-            layers_replaced += 1
-
-            # Because we've changed model parameters, rebuild optimizer & scheduler
-            # and re-prepare with accelerator
-            optimizer, lr_scheduler, overrode_max_train_steps_flag = build_optimizer_and_scheduler(
-                model, args, train_dataloader
-            )
-            model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
-                model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
-            )
-            model.train()  # put back in train mode
-
-        else:
-            # If all layers are replaced, simply continue training
-            model.train()
-
+        model.train()
         if args.with_tracking:
             total_loss = 0
 
@@ -929,6 +915,22 @@ def main():
                 progress_bar.update(1)
                 completed_steps += 1
 
+                # Replace layers evenly over training duration
+                if completed_steps >= next_replacement_step and layers_replaced < num_layers:
+                    logger.info(f"Replacing layer {layers_replaced} at step {completed_steps}...")
+                    model = replace_one_layer(model, layers_replaced, config, args, check_weights_allclose)
+                    layers_replaced += 1
+                    next_replacement_step += replacement_step_interval
+
+                    # Rebuild optimizer and scheduler to include new parameters
+                    optimizer, lr_scheduler, overrode_max_train_steps_flag = build_optimizer_and_scheduler(
+                        model, args, train_dataloader
+                    )
+                    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
+                        model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
+                    )
+                    model.train()  # Return model to train mode
+
             if isinstance(checkpointing_steps, int):
                 if completed_steps % checkpointing_steps == 0:
                     output_dir = f"step_{completed_steps}"
@@ -962,8 +964,7 @@ def main():
         logger.info(f"[EVAL] epoch {epoch}: {eval_metric}")
 
         if completed_steps >= args.max_train_steps:
-            break
-        
+            break        
 
     if args.with_tracking:
         accelerator.end_training()
