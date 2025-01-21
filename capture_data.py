@@ -601,7 +601,7 @@ def main():
             augmented_data = pickle.load(f)
         print("Loaded augmented data from file.")
     
-    raw_datasets['train'] = raw_datasets['train'].select(range(149,150))
+    #raw_datasets['train'] = raw_datasets['train'].select(range(149,150))
 
     '''
     print("------ BEFORE AUGMENT ---------")
@@ -697,7 +697,7 @@ def main():
     # Update indices
     raw_datasets['train'] = raw_datasets['train'].map(update_idx, with_indices=True)
     
-    
+    ''' 
     print("------ AFTER AUGMENT ---------")
     for data in raw_datasets['train']:
 
@@ -709,7 +709,7 @@ def main():
                 print("\t",data[k])
                 print("_____")
                 assert data[k] != None
-
+    '''
 
     if not os.path.exists(tokenizer_path):
         tokenizer = AutoTokenizer.from_pretrained(
@@ -733,7 +733,7 @@ def main():
         config.save_pretrained(config_path)
     else:
         config = AutoConfig.from_pretrained(config_path)
-
+    config.output_attentions = True
     # Load or save model
     if not os.path.exists(model_path):
 
@@ -997,13 +997,6 @@ def main():
             # Save inputs
             input_save_folder = f"{base_save_folder}/inputs/encoder_{self.encoder_idx}"
             create_directory_if_not_exists(input_save_folder)
-            
-            #print("MHA INPUTS")
-            #print([type(a) for a in inputs])
-
-            #print("Position ids : ",inputs[2].shape)
-            #print("Position embeddings : ",len(inputs[7]))
-            
 
             a = inputs[0]
             b = inputs[1]
@@ -1085,15 +1078,9 @@ def main():
 
     # Check if the model is Llama and adjust the hook registration accordingly
     if "roberta" in model_args.model_name_or_path.lower():
-        # Assuming model.layers is a list of layers in Llama
         
         hooks = [AttentionHookRoberta(i) for i in range(len(model.roberta.encoder.layer))]
         ffn_hooks = [FfnHook(i) for i in range(len(model.roberta.encoder.layer))]
-
-        def pre_forward_hook(module, args):
-            #hidden_states, attention_mask, *rest = args
-            print(f"Attention mask in pre-forward hook: {len(args)}")
-            return args
 
         for i, hook in enumerate(hooks):
             if i == data_args.encoder_idx:
@@ -1113,9 +1100,6 @@ def main():
                 modelbert.transformer.layer[i].attention.register_forward_hook(hooks[i])
                 modelbert.transformer.layer[i].ffn.register_forward_hook(ffn_hooks[i])
                 modelbert.transformer.layer[i].register_forward_hook(layer_hooks[i])
-
-
-
 
     trainer = Trainer(
         model=model,

@@ -270,7 +270,8 @@ def main():
     loss_fn = nn.MSELoss()
     #loss_fn_cosine = nn.CosineSimilarity(dim=1)
      
-    augment = True
+    multiplier = args.multiplier
+    augment = multiplier != 0
     pMin = 0
     pMax = 0
     pStep = (pMax-pMin)/(num_epochs)
@@ -282,7 +283,6 @@ def main():
     mha_output_save_folder = f"./saves/{args.model_name}/{args.task}/mha/outputs/encoder_{args.encoder_idx}"
     batch_count = count_files(mha_output_save_folder)
     
-    multiplier = args.multiplier
     print("Batch count : ",batch_count)
     for epoch in range(0,num_epochs):
 

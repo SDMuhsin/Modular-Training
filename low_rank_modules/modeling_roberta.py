@@ -445,6 +445,9 @@ class RobertaAttention(nn.Module):
         past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor]:
+
+        #print(f"Inside RobertaAttention, hidden states :  ", hidden_states.shape)
+        #print(f"Inside RobertaAttention, attention mask : ", attention_mask.shape)
         self_outputs = self.self(
             hidden_states,
             attention_mask,
@@ -938,7 +941,7 @@ class RobertaModel(RobertaPreTrainedModel):
         encoder_attention_mask: Optional[torch.Tensor] = None,
         past_key_values: Optional[List[torch.FloatTensor]] = None,
         use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
+        output_attentions: Optional[bool] = True,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple[torch.Tensor], BaseModelOutputWithPoolingAndCrossAttentions]:
@@ -962,7 +965,14 @@ class RobertaModel(RobertaPreTrainedModel):
             If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding (see
             `past_key_values`).
         """
+        
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        #output_attentions = True # Quick hack that will cause problems later, sorry future me :(
+        
+        #print(f"Inside RobertaModel, input_ids :  ", input_ids.shape)
+        #print(f"Inside RobertaModel, attention_mask :  ", attention_mask.shape)
+
+        
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
@@ -1391,7 +1401,7 @@ class RobertaForSequenceClassification(RobertaPreTrainedModel):
         head_mask: Optional[torch.FloatTensor] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
-        output_attentions: Optional[bool] = None,
+        output_attentions: Optional[bool] = True, # Temp hack
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple[torch.Tensor], SequenceClassifierOutput]:
@@ -1401,7 +1411,11 @@ class RobertaForSequenceClassification(RobertaPreTrainedModel):
             config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
             `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
         """
+
+
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        #print(f"Inside RobertaForSequenceClassification, input_ids :  ", input_ids.shape)
+        #print(f"Inside RobertaForSequenceClassification, attention mask :  ", attention_mask.shape)
 
         outputs = self.roberta(
             input_ids,
@@ -1410,7 +1424,7 @@ class RobertaForSequenceClassification(RobertaPreTrainedModel):
             position_ids=position_ids,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
-            output_attentions=output_attentions,
+            output_attentions=True, # Temp hack
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
