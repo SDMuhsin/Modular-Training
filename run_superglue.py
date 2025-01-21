@@ -801,14 +801,6 @@ def main():
     if checkpointing_steps is not None and checkpointing_steps.isdigit():
         checkpointing_steps = int(checkpointing_steps)
 
-    # We need to initialize the trackers we use, and also store our configuration.
-    # The trackers initializes automatically on the main process.
-    if args.with_tracking:
-        experiment_config = vars(args)
-        # TensorBoard cannot log Enums, need the raw value
-        experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"].value
-        accelerator.init_trackers("glue_no_trainer", experiment_config)
-
     # Get the metric function
     if args.task_name not in ["rte","mrpc","stsb","cola"]:
         metric = evaluate.load("./downloads/evaluate/metrics/super_glue/super_glue.py", args.task_name)
@@ -919,10 +911,6 @@ def main():
         eval_metric = metric.compute()
         logger.info(f"[EVAL] epoch {epoch}: {eval_metric}")
         
-
-    if args.with_tracking:
-        accelerator.end_training()
-
 
     if args.task_name == "mnli":
         # Final evaluation on mismatched validation set
