@@ -82,7 +82,7 @@ then
 	  --task_name $task \
 	  --per_device_train_batch_size 32 \
 	  --learning_rate 2e-5 \
-	  --num_train_epochs 64 \
+	  --num_train_epochs 18 \
 	  --output_dir /tmp/$task/ \
 	  --job_name $job_name \
 	  --last_mod_trained_for $epochs \
