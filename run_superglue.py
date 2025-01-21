@@ -867,47 +867,85 @@ def main():
     teacher = accelerator.prepare(teacher)
     teacher.eval()
 
-    ''' @@@@@@@@@@@@@@@@@@@ TRAINING LOOP W/ PROGRESSIVE REPLACEMENT @@@@@@@@@@@@@@@@@@@@@@@@ '''
-    # Progressive replacement setup
-    replacement_step_interval = args.max_train_steps // num_layers
-    next_replacement_step = replacement_step_interval
+    ################################################################################
+    # Graduated Replacement Setup
+    ################################################################################
+
+    # Convert G% to a fraction
+    g_fraction = 60.0 / 100.0
+
+    # Total steps for the replacement phase
+    steps_for_replacement = int(g_fraction * args.max_train_steps)
+
+    # Compute how many steps we wait between layer replacements
+    replacement_step_interval = max(1, steps_for_replacement // num_layers)
+
     layers_replaced = 0
+    next_replacement_step = replacement_step_interval
+
+    ################################################################################
+    # Main Training Loop
+    ################################################################################
 
     for epoch in range(starting_epoch, args.num_train_epochs):
-
         model.train()
-        if args.with_tracking:
-            total_loss = 0
 
+        # If resuming from checkpoint
         if args.resume_from_checkpoint and epoch == starting_epoch and resume_step is not None:
             active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
         else:
             active_dataloader = train_dataloader
 
         for step, batch in enumerate(active_dataloader):
+            
+            # 1) Check if we need to replace another layer (during the G% replacement window).
+            #    Only do this if we haven't replaced all layers yet and we're still within
+            #    the progressive replacement phase (completed_steps < steps_for_replacement).
+            if (completed_steps >= next_replacement_step 
+                and layers_replaced < num_layers
+                and completed_steps < steps_for_replacement):
+                
+                logger.info(
+                    f"Replacing layer {layers_replaced} at global step {completed_steps}."
+                )
+                model = replace_one_layer(model, layers_replaced, config, args, check_weights_allclose)
+                layers_replaced += 1
+
+                # Schedule next replacement step
+                next_replacement_step += replacement_step_interval
+
+                # Rebuild optimizer & scheduler and reprepare
+                optimizer, lr_scheduler, overrode_max_train_steps_flag = build_optimizer_and_scheduler(
+                    model, args, train_dataloader
+                )
+                model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
+                    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
+                )
+                model.train()
+            
+            # 2) Forward pass
             outputs = model(**batch)
             loss = outputs.loss
 
-            # Distillation
+            # 3) Distillation
             with torch.no_grad():
                 teacher_outputs = teacher(**batch)
                 teacher_logits = teacher_outputs.logits
-
+            
             student_logits = outputs.logits
             dist_loss = distillation_loss_fn(
                 log_softmax(student_logits / temperature, dim=-1),
                 softmax(teacher_logits / temperature, dim=-1)
             )
-            # Combine the original loss and distillation loss
-            alpha = 0.5
-            # Example if you want to mix them: loss = (1 - alpha) * loss + alpha * dist_loss * (temperature**2)
+            # Example combining:
+            # alpha = 0.5
+            # loss = (1 - alpha) * loss + alpha * dist_loss * (temperature**2)
 
-            if args.with_tracking:
-                total_loss += loss.detach().float()
-
+            # 4) Backward
             loss = loss / args.gradient_accumulation_steps
             accelerator.backward(loss)
 
+            # 5) Step / LR schedule
             if (step % args.gradient_accumulation_steps == 0) or (step == len(train_dataloader) - 1):
                 optimizer.step()
                 lr_scheduler.step()
@@ -915,22 +953,7 @@ def main():
                 progress_bar.update(1)
                 completed_steps += 1
 
-                # Replace layers evenly over training duration
-                if completed_steps >= next_replacement_step and layers_replaced < num_layers:
-                    logger.info(f"Replacing layer {layers_replaced} at step {completed_steps}...")
-                    model = replace_one_layer(model, layers_replaced, config, args, check_weights_allclose)
-                    layers_replaced += 1
-                    next_replacement_step += replacement_step_interval
-
-                    # Rebuild optimizer and scheduler to include new parameters
-                    optimizer, lr_scheduler, overrode_max_train_steps_flag = build_optimizer_and_scheduler(
-                        model, args, train_dataloader
-                    )
-                    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
-                        model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
-                    )
-                    model.train()  # Return model to train mode
-
+            # 6) Checkpointing
             if isinstance(checkpointing_steps, int):
                 if completed_steps % checkpointing_steps == 0:
                     output_dir = f"step_{completed_steps}"
@@ -938,10 +961,11 @@ def main():
                         output_dir = os.path.join(args.output_dir, output_dir)
                     accelerator.save_state(output_dir)
 
+            # End loop if we've hit max train steps
             if completed_steps >= args.max_train_steps:
                 break
 
-        # Evaluation
+        # EVALUATION PHASE
         model.eval()
         samples_seen = 0
         for step, batch in enumerate(eval_dataloader):
@@ -949,6 +973,8 @@ def main():
                 outputs = model(**batch)
             predictions = outputs.logits.argmax(dim=-1) if not is_regression else outputs.logits.squeeze()
             predictions, references = accelerator.gather((predictions, batch["labels"]))
+
+            # If multi-process: handle duplicates in the last batch
             if accelerator.num_processes > 1:
                 if step == len(eval_dataloader) - 1:
                     predictions = predictions[: len(eval_dataloader.dataset) - samples_seen]
@@ -964,8 +990,7 @@ def main():
         logger.info(f"[EVAL] epoch {epoch}: {eval_metric}")
 
         if completed_steps >= args.max_train_steps:
-            break        
-
+            break
     if args.with_tracking:
         accelerator.end_training()
 
