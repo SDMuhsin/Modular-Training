@@ -678,152 +678,176 @@ def main():
 
     ''' @@@@@@@@@@@@@@@@@@@ PROGRESSIVE MODULE REPLACEMENT STRATEGY @@@@@@@@@@@@@@@@@@@@@@@@ '''
 
-    # Determine number of layers
-    num_layers = 12 if "roberta" in args.model_name_or_path.lower() else 6
 
-    # We'll track how many layers have been replaced so far.
-    # Each epoch, if we still have layers left to replace, we replace exactly one more.
-    layers_replaced = 0
 
-    # We recommend 2×num_layers epochs total, so that you have enough epochs
-    # after the final layer is replaced. Adjust to your needs.
-    logger.info(f"Recommended total epochs based on progressive strategy: {2 * num_layers}")
+    def partial_add_param_group(optimizer, module, no_decay, weight_decay, learning_rate):
+        """
+        Add the parameters of `module` to the existing optimizer without losing
+        momentum states for existing parameters. We split out parameters needing
+        weight decay vs. those not needing it.
+        """
+        decay_params = []
+        no_decay_params = []
+
+        for name, param in module.named_parameters():
+            # If param is already in the optimizer, skip (this can happen if replaced module
+            # re-uses existing param objects, but typically each load_state_dict has fresh param Tensors)
+            if any(param is p for group in optimizer.param_groups for p in group['params']):
+                continue
+
+            if any(nd in name for nd in no_decay):
+                no_decay_params.append(param)
+            else:
+                decay_params.append(param)
+
+        # If new parameters exist, add them to the optimizer in separate param groups
+        if len(decay_params) > 0:
+            optimizer.add_param_group({
+                "params": decay_params,
+                "weight_decay": weight_decay,
+                "lr": learning_rate,
+            })
+        if len(no_decay_params) > 0:
+            optimizer.add_param_group({
+                "params": no_decay_params,
+                "weight_decay": 0.0,
+                "lr": learning_rate,
+            })
+
 
     def replace_one_layer(model, layer_index, config, args, check_weights_allclose):
         """
-        Replaces exactly one layer (layer_index) in the given model
-        with its previously trained low-rank module(s).
+        Replaces exactly one layer (layer_index) in `model` with
+        the previously trained low-rank module(s). Returns a list
+        of newly introduced parameters so we can add them to the optimizer
+        without re-initializing it.
         """
-        # 'model' here can be either Roberta or DistilBert
-        # 'args.last_mod_trained_for' tells us from which checkpoint to load the module
+        # We'll collect new parameters in this list
+        new_params = []
+
         module_trained_for = args.last_mod_trained_for
 
+        # 1) If needed, replace the MHA
         if args.encoder_modularity in ["M", "MF"]:
-            # Replace the MHA part
             if "roberta" in args.model_name_or_path.lower():
                 module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{layer_index}_epoch{module_trained_for}.pth"
                 mha = RobertaAttentionLowRank(config, compression=int(args.encoder_compression))
                 mha.load_state_dict(torch.load(module_path))
-
+                # Move new module to the same device as the model
+                mha.to(next(model.parameters()).device)
+                # Assign
                 model.roberta.encoder.layer[layer_index].attention = mha
-
+                new_params.extend(mha.parameters())
             else:
                 module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{layer_index}_epoch{module_trained_for}.pth"
                 mha = MultiHeadSelfAttentionLowRank(config, compression=int(args.encoder_compression))
                 mha_1 = copy.deepcopy(mha)
                 mha.load_state_dict(torch.load(module_path))
+                mha.to(next(model.parameters()).device)
                 model.distilbert.transformer.layer[layer_index].attention = mha
-
                 allClose = check_weights_allclose(mha_1, model.distilbert.transformer.layer[layer_index].attention)
                 if not allClose:
                     print("\n\n\n\n NOT ALL CLOSE \n\n\n\n")
 
+                new_params.extend(mha.parameters())
+
+        # 2) If needed, replace the FFN
         if args.encoder_modularity in ["F", "MF"]:
-            # Replace the FFN part
             if "roberta" in args.model_name_or_path.lower():
                 module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{layer_index}_epoch{module_trained_for}.pth"
                 intermediate_lr = RobertaIntermediateLowRank(config, int(args.encoder_compression))
                 output_lr = RobertaOutputLowRank(config, int(args.encoder_compression))
                 ffn = RobertaFFNLowRank(intermediate_lr, output_lr)
                 ffn.load_state_dict(torch.load(module_path))
+                ffn.to(next(model.parameters()).device)
 
                 model.roberta.encoder.layer[layer_index].intermediate = ffn.intermediate
                 model.roberta.encoder.layer[layer_index].output = ffn.output
                 model.roberta.encoder.layer[layer_index].ffn = ffn
+
+                new_params.extend(ffn.parameters())
+
             else:
                 module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{layer_index}_epoch{module_trained_for}.pth"
                 ffn = FFNLowRank(config, compression=int(args.encoder_compression))
                 ffn_1 = copy.deepcopy(ffn)
                 ffn.load_state_dict(torch.load(module_path))
+                ffn.to(next(model.parameters()).device)
 
                 model.distilbert.transformer.layer[layer_index].ffn = ffn
                 allClose = check_weights_allclose(ffn_1, model.distilbert.transformer.layer[layer_index].ffn)
                 if not allClose:
                     print("\n\n\n\n NOT ALL CLOSE \n\n\n\n")
+
+                new_params.extend(ffn.parameters())
         else:
             print("\n\n\n NO MODULARITY SELECTED, TRAINING FULL MODEL\n\n\n")
 
-        return model
+        return new_params
 
-    ''' @@@@@@@@@@@@@@@@@@@ MODEL PREP & OPTIMIZER SETUP @@@@@@@@@@@@@@@@@@@@@@@@ '''
 
-    # Make a deep copy so that we can progressively plug in replaced modules.
+    # -----------
+    # Main Code Snippet
+    # -----------
+    # Example usage in run_superglue.py
+
+    # Compute how many layers we have
+    num_layers = 12 if "roberta" in args.model_name_or_path.lower() else 6
+
+    # Step 0) Make a copy of the original model if you want to start from that.
     my_model = copy.deepcopy(model)
 
-    def build_optimizer_and_scheduler(model, args, train_dataloader):
-        """
-        Builds a fresh optimizer and LR scheduler for the current model parameters.
-        This is called after each layer replacement so that the newly replaced modules
-        are properly captured by the optimizer.
-        """
-        no_decay = ["bias", "LayerNorm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [
-                    p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": args.weight_decay,
-            },
-            {
-                "params": [
-                    p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": 0.0,
-            },
-        ]
-        optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
-
-        # Scheduler and math around the number of training steps.
-        overrode_max_train_steps = False
-        num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
-        if args.max_train_steps is None:
-            args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
-            overrode_max_train_steps = True
-
-        lr_scheduler = get_scheduler(
-            name=args.lr_scheduler_type,
-            optimizer=optimizer,
-            num_warmup_steps=args.num_warmup_steps,
-            num_training_steps=args.max_train_steps,
-        )
-
-        return optimizer, lr_scheduler, overrode_max_train_steps
-
-
-    # Count learnable parameters before training
     a = count_learnable_parameters(my_model)
     b = count_learnable_parameters(model)
     print("\n\n\n\n\n\tOriginal model param count : ", b)
-    print("\tNEw model param count      : ", a)
+    print("\tNew model param count      : ", a)
     print(100 * (b - a) / b)
     print("\n\n\n\n\n")
 
-    # We'll do the main training using 'my_model' progressively replaced
+    # We'll train using 'my_model'
     model = my_model
-    print(f"\n\n\n\n ARGS.tracking? : {args.with_tracking} \n\n\n")
 
-    ''' @@@@@@@@@@@@@@@@@@@ DATASET & ACCELERATOR PREP (UNALTERED) @@@@@@@@@@@@@@@@@@@@@@@@ '''
-    # (We keep this part of the code unaltered except where needed to re-prepare after replacements.)
+    # -----------
+    # Build initial optimizer/scheduler for the *full model*
+    # without repeated calls later
+    # -----------
+    no_decay = ["bias", "LayerNorm.weight"]
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+            "weight_decay": args.weight_decay,
+        },
+        {
+            "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)],
+            "weight_decay": 0.0,
+        },
+    ]
+    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
 
+    # Scheduler and max steps
     overrode_max_train_steps = False
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
     if args.max_train_steps is None:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
         overrode_max_train_steps = True
 
-    # We build the optimizer and scheduler for the initial state (no layers replaced yet).
-    optimizer, lr_scheduler, overrode_max_train_steps_flag = build_optimizer_and_scheduler(
-        model, args, train_dataloader
+    lr_scheduler = get_scheduler(
+        name=args.lr_scheduler_type,
+        optimizer=optimizer,
+        num_warmup_steps=args.num_warmup_steps,
+        num_training_steps=args.max_train_steps,
     )
 
-    # Prepare everything with our `accelerator`.
+    # -----------
+    # Accelerator prepare (only once!)
+    # -----------
     model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
     )
 
-    # We need to recalculate our total training steps in case it changed
+    # Recompute total steps after prepare
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
-    if overrode_max_train_steps or overrode_max_train_steps_flag:
+    if overrode_max_train_steps:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
 
     args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
@@ -832,12 +856,7 @@ def main():
     if checkpointing_steps is not None and checkpointing_steps.isdigit():
         checkpointing_steps = int(checkpointing_steps)
 
-    if args.with_tracking:
-        experiment_config = vars(args)
-        experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"].value
-        accelerator.init_trackers("glue_no_trainer", experiment_config)
-
-    # Get the metric function
+    # Metric loading
     if args.task_name not in ["rte", "mrpc", "stsb", "cola"]:
         metric = evaluate.load("./downloads/evaluate/metrics/super_glue/super_glue.py", args.task_name)
     else:
@@ -851,57 +870,54 @@ def main():
     logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {args.num_train_epochs}")
     logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
-    logger.info(
-        f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}"
-    )
+    logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
     logger.info(f"  Total optimization steps = {args.max_train_steps}")
+
+    # Distillation
+    distillation_loss_fn = KLDivLoss(reduction='batchmean')
+    temperature = 2.0
+    teacher = accelerator.prepare(teacher)  # teacher model on device
+    teacher.eval()
+
     progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
     completed_steps = 0
     starting_epoch = 0
-
     progress_bar.update(completed_steps)
 
-    # Distillation prep
-    distillation_loss_fn = KLDivLoss(reduction='batchmean')
-    temperature = 2.0
-    teacher = accelerator.prepare(teacher)
-    teacher.eval()
-
-    ################################################################################
-    # Graduated Replacement Setup
-    ################################################################################
-
-    # Suppose g1 = 0.2 (20%), g2 = 0.8 (80%)
-    g1 = 0.3
-    g2 = 0.7
+    # -----------
+    # Progressive Replacement Scheduling
+    # -----------
+    g1 = 0.2  # 20%
+    g2 = 0.8  # 80%
 
     total_steps = args.max_train_steps
-    start_replace_step = int(g1 * total_steps)   # Step where we start replacements
-    end_replace_step   = int(g2 * total_steps)   # Step after which we stop replacements
+    start_replace_step = int(g1 * total_steps)  # Step at which we begin replacement
+    end_replace_step   = int(g2 * total_steps)  # Step after which we stop replacement
 
-    # We'll replace all num_layers modules evenly between these two points
-    replacement_window = end_replace_step - start_replace_step
-    replacement_interval = replacement_window // num_layers if num_layers > 0 else replacement_window
+    if num_layers > 0:
+        replacement_window = max(0, end_replace_step - start_replace_step)
+        replacement_interval = replacement_window // num_layers if replacement_window > 0 else 0
+    else:
+        replacement_interval = 0
 
     layers_replaced = 0
     next_replacement_step = start_replace_step
 
-    completed_steps = 0
-    progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
-    progress_bar.update(completed_steps)
-
+    # -----------
+    # Training Loop
+    # -----------
     for epoch in range(starting_epoch, args.num_train_epochs):
+
         model.train()
 
-        # If you're using checkpoint resumption, you can leave this logic:
+        # If resuming from checkpoint
         if args.resume_from_checkpoint and epoch == starting_epoch and resume_step is not None:
             active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
         else:
             active_dataloader = train_dataloader
 
         for step, batch in enumerate(active_dataloader):
-            # Forward pass
             outputs = model(**batch)
             loss = outputs.loss
 
@@ -915,50 +931,88 @@ def main():
                 F.log_softmax(student_logits / temperature, dim=-1),
                 F.softmax(teacher_logits / temperature, dim=-1)
             )
-            # e.g., loss = (1 - alpha)*loss + alpha*(dist_loss * temperature**2)
+            # Possibly combine with student loss, e.g.:
+            # alpha = 0.5
+            # loss = (1 - alpha)*loss + alpha*(dist_loss * (temperature**2))
 
-            # Gradient accumulation
             loss = loss / args.gradient_accumulation_steps
             accelerator.backward(loss)
 
-            if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
+            # Optim step
+            if (step % args.gradient_accumulation_steps == 0) or (step == len(train_dataloader) - 1):
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
+
                 progress_bar.update(1)
                 completed_steps += 1
 
-                # ---- Progressive Replacement Between G1% and G2% ----
-                if (completed_steps >= next_replacement_step 
-                        and completed_steps <= end_replace_step
-                        and layers_replaced < num_layers):
-                    # Replace one more layer
+                # -------------
+                # Progressive Replacement Logic: only between G1% and G2%
+                # -------------
+                if (completed_steps >= next_replacement_step
+                    and completed_steps <= end_replace_step
+                    and layers_replaced < num_layers
+                ):
+                    # Actually replace the next layer
                     logger.info(f"Replacing layer {layers_replaced} at step {completed_steps} ...")
-                    model = replace_one_layer(model, layers_replaced, config, args, check_weights_allclose)
-                    layers_replaced += 1
 
+                    # 1) unwrap model if needed
+                    unwrapped_model = accelerator.unwrap_model(model)
+
+                    # 2) replace layer i
+                    newly_added_params = replace_one_layer(
+                        unwrapped_model,
+                        layers_replaced,
+                        config,
+                        args,
+                        check_weights_allclose
+                    )
+
+                    # 3) add the new params to the *existing* optimizer
+                    partial_add_param_group(
+                        optimizer,
+                        module=None,  # we'll handle the params directly
+                        no_decay=no_decay,
+                        weight_decay=args.weight_decay,
+                        learning_rate=args.learning_rate,
+                    )
+                    # Actually, we need the newly_added_params. We can do that in partial_add_param_group.
+                    # So let's do:
+                    if newly_added_params:
+                        decay_list = []
+                        no_decay_list = []
+                        for n_p in newly_added_params:
+                            # We don't have param names here, so let's assume they all get same weight_decay
+                            # or you can do a name-based logic if needed. For simplicity:
+                            decay_list.append(n_p)
+
+                        if len(decay_list) > 0:
+                            optimizer.add_param_group({
+                                "params": decay_list,
+                                "weight_decay": args.weight_decay,
+                                "lr": args.learning_rate,
+                            })
+
+                    # 4) done with replacement
+                    layers_replaced += 1
                     next_replacement_step += replacement_interval
 
-                    # Rebuild optimizer/scheduler to include new params
-                    optimizer, lr_scheduler, overrode_max_train_steps_flag = build_optimizer_and_scheduler(
-                        model, args, train_dataloader
-                    )
-                    # Re-prepare with accelerator
-                    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
-                        model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
-                    )
-                    model.train()
+                # -------------
+                # End progressive replacement
+                # -------------
 
-            # Check for max steps
+            # Early break if done
             if completed_steps >= args.max_train_steps:
                 break
 
-        # ------ EVALUATION AFTER EACH EPOCH (Unchanged) ------
+        # --------- EVALUATION -------------
         model.eval()
         samples_seen = 0
         for step, batch in enumerate(eval_dataloader):
             with torch.no_grad():
                 outputs = model(**batch)
+            # classification
             predictions = outputs.logits.argmax(dim=-1) if not is_regression else outputs.logits.squeeze()
             predictions, references = accelerator.gather((predictions, batch["labels"]))
             if accelerator.num_processes > 1:
@@ -974,6 +1028,8 @@ def main():
 
         if completed_steps >= args.max_train_steps:
             break
+
+
     if args.with_tracking:
         accelerator.end_training()
 
