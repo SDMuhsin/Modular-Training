@@ -503,90 +503,7 @@ def main():
     #baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}/baseline_model.pth"
     #teacher.load_state_dict(torch.load(baseline_model_dir))
 
-    ''' @@@@@@@@@@@@@@@@@@@ PLUG IN MODULES @@@@@@@@@@@@@@@@@@@@@@@@ '''
-    my_model = copy.deepcopy(model)
     
-    module_trained_for = args.last_mod_trained_for
-    
-    num_layers = 12 if "roberta" in args.model_name_or_path.lower() else 6
-    for i in range(num_layers):
-        
-        #og_encoder_self_attention = model.bert.encoder.layer[i].attention.self    
-        #my_model.bert.encoder.layer[i].attention.self = BertMixedSelfAttention(config,None,og_encoder_self_attention)
-        
-        if (args.encoder_modularity == 'M' or args.encoder_modularity == 'MF'):
-           
-            if("roberta" in args.model_name_or_path.lower()):
-
-                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
-                mha = RobertaAttentionLowRank(config,compression=int(args.encoder_compression))
-                mha.load_state_dict(torch.load(module_path))
-
-                my_model.roberta.encoder.layer[i].attention = mha
-
-            else:
-                
-                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
-                mha = MultiHeadSelfAttentionLowRank(config,compression=int(args.encoder_compression))
-
-                mha_1 = copy.deepcopy(mha)
-
-                mha.load_state_dict(torch.load(module_path))
-                my_model.distilbert.transformer.layer[i].attention = mha
-                
-                allClose = check_weights_allclose(mha_1,my_model.distilbert.transformer.layer[i].attention)
-                if(allClose):
-                    print("\n\n\n\n ALL CLOSE \n\n\n\n")
-
-        if (args.encoder_modularity == 'F' or args.encoder_modularity == 'MF'):
-            
-            if("roberta" in args.model_name_or_path.lower()):
-                
-                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
-
-                intermediate_lr = RobertaIntermediateLowRank(config,int(args.encoder_compression))
-                output_lr = RobertaOutputLowRank(config,int(args.encoder_compression))
-                ffn = RobertaFFNLowRank(intermediate_lr,output_lr);
-
-                ffn.load_state_dict(torch.load(module_path))
-                my_model.roberta.encoder.layer[i].intermediate = ffn.intermediate
-                my_model.roberta.encoder.layer[i].output = ffn.output
-                my_model.roberta.encoder.layer[i].ffn = ffn
-
-
-            else:
-
-                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
-                ffn = FFNLowRank(config,compression=int(args.encoder_compression))
-
-                ffn_1 = copy.deepcopy(ffn)
-
-                ffn.load_state_dict(torch.load(module_path))
-                my_model.distilbert.transformer.layer[i].ffn = ffn
-                
-                allClose = check_weights_allclose(ffn_1,my_model.distilbert.transformer.layer[i].ffn)
-                if(allClose):
-                    print("\n\n\n\n ALL CLOSE \n\n\n\n")
-        else:
-            print("\n\n\n NO MODULARITY SELECTED, TRAINING FULL MODEL\n\n\n")
-       
-        #Load module from disk
-        #Set module to model
-
-
-
-
-    ''' @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ ''' 
-    a = count_learnable_parameters(my_model)
-    b = count_learnable_parameters(model)
-    
-    
-    print("\n\n\n\n\n\tOriginal model param count : ",b)
-    print("\tNEw model param count      : ",a)
-    print( 100 * (b-a)/b )
-    print("\n\n\n\n\n")
-
-    model = my_model
     # Preprocessing the datasets
     if args.task_name is not None:
         sentence1_key, sentence2_key,sentence3_key = task_to_keys[args.task_name]
@@ -633,6 +550,7 @@ def main():
         model.config.id2label = {id: label for label, id in config.label2id.items()}
 
     padding = "max_length" if args.pad_to_max_length else False
+
 
     def preprocess_function(examples):
         # Tokenize the texts
@@ -709,9 +627,6 @@ def main():
 
         if(args.task_name == "wic"):
             
-            print("\n\n\n")
-            print(raw_datasets['train'])
-            print("\n\n\n")
             processed_datasets = raw_datasets.map(
                 preprocess_wic_function,
                 batched=True,
@@ -757,6 +672,88 @@ def main():
         train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
     )
     eval_dataloader = DataLoader(eval_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
+
+
+
+    ''' @@@@@@@@@@@@@@@@@@@ PLUG IN MODULES @@@@@@@@@@@@@@@@@@@@@@@@ '''
+
+    my_model = copy.deepcopy(model)
+    module_trained_for = args.last_mod_trained_for
+    
+    num_layers = 12 if "roberta" in args.model_name_or_path.lower() else 6
+    for i in range(num_layers):
+        
+        if (args.encoder_modularity == 'M' or args.encoder_modularity == 'MF'):
+           
+            if("roberta" in args.model_name_or_path.lower()):
+
+                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
+                mha = RobertaAttentionLowRank(config,compression=int(args.encoder_compression))
+                mha.load_state_dict(torch.load(module_path))
+
+                my_model.roberta.encoder.layer[i].attention = mha
+
+            else:
+                
+                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
+                mha = MultiHeadSelfAttentionLowRank(config,compression=int(args.encoder_compression))
+
+                mha_1 = copy.deepcopy(mha)
+
+                mha.load_state_dict(torch.load(module_path))
+                my_model.distilbert.transformer.layer[i].attention = mha
+                
+                allClose = check_weights_allclose(mha_1,my_model.distilbert.transformer.layer[i].attention)
+                if(not allClose):
+                    print("\n\n\n\n NOT ALL CLOSE \n\n\n\n")
+
+        if (args.encoder_modularity == 'F' or args.encoder_modularity == 'MF'):
+            
+            if("roberta" in args.model_name_or_path.lower()):
+                
+                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
+
+                intermediate_lr = RobertaIntermediateLowRank(config,int(args.encoder_compression))
+                output_lr = RobertaOutputLowRank(config,int(args.encoder_compression))
+                ffn = RobertaFFNLowRank(intermediate_lr,output_lr);
+
+                ffn.load_state_dict(torch.load(module_path))
+                my_model.roberta.encoder.layer[i].intermediate = ffn.intermediate
+                my_model.roberta.encoder.layer[i].output = ffn.output
+                my_model.roberta.encoder.layer[i].ffn = ffn
+
+
+            else:
+
+                module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
+                ffn = FFNLowRank(config,compression=int(args.encoder_compression))
+
+                ffn_1 = copy.deepcopy(ffn)
+
+                ffn.load_state_dict(torch.load(module_path))
+                my_model.distilbert.transformer.layer[i].ffn = ffn
+                
+                allClose = check_weights_allclose(ffn_1,my_model.distilbert.transformer.layer[i].ffn)
+                if(not allClose):
+                    print("\n\n\n\n NOT ALL CLOSE \n\n\n\n")
+        else:
+            print("\n\n\n NO MODULARITY SELECTED, TRAINING FULL MODEL\n\n\n")
+       
+
+    a = count_learnable_parameters(my_model)
+    b = count_learnable_parameters(model)
+    
+    
+    print("\n\n\n\n\n\tOriginal model param count : ",b)
+    print("\tNEw model param count      : ",a)
+    print( 100 * (b-a)/b )
+    print("\n\n\n\n\n")
+
+    model = my_model
+
+    ''' @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ ''' 
+
+
 
     # Optimizer
     # Split weights in two groups, one with weight decay and the other not.
@@ -949,39 +946,7 @@ def main():
 
         eval_metric = metric.compute()
         logger.info(f"[EVAL] epoch {epoch}: {eval_metric}")
-
-        if args.with_tracking:
-            accelerator.log(
-                {
-                    "accuracy" if args.task_name is not None else "glue": eval_metric,
-                    "train_loss": total_loss.item() / len(train_dataloader),
-                    "epoch": epoch,
-                    "step": completed_steps,
-                },
-                step=completed_steps,
-            )
-
-        if args.push_to_hub and epoch < args.num_train_epochs - 1:
-            accelerator.wait_for_everyone()
-            unwrapped_model = accelerator.unwrap_model(model)
-            unwrapped_model.save_pretrained(
-                args.output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
-            )
-            if accelerator.is_main_process:
-                tokenizer.save_pretrained(args.output_dir)
-                api.upload_folder(
-                    commit_message=f"Training in progress epoch {epoch}",
-                    folder_path=args.output_dir,
-                    repo_id=repo_id,
-                    repo_type="model",
-                    token=args.hub_token,
-                )
-
-        if args.checkpointing_steps == "epoch":
-            output_dir = f"epoch_{epoch}"
-            if args.output_dir is not None:
-                output_dir = os.path.join(args.output_dir, output_dir)
-            accelerator.save_state(output_dir)
+        
 
     if args.with_tracking:
         accelerator.end_training()
