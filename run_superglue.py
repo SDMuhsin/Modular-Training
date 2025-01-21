@@ -52,6 +52,7 @@ from low_rank_modules.modeling_roberta import RobertaForSequenceClassification, 
 
 from torch.nn import KLDivLoss
 from torch.nn.functional import softmax, log_softmax, kl_div
+import torch.nn.functional as F
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.42.0.dev0")
@@ -871,101 +872,88 @@ def main():
     # Graduated Replacement Setup
     ################################################################################
 
-    # Convert G% to a fraction
-    g_fraction = 60.0 / 100.0
+    # Suppose g1 = 0.2 (20%), g2 = 0.8 (80%)
+    g1 = 0.3
+    g2 = 0.7
 
-    # Total steps for the replacement phase
-    steps_for_replacement = int(g_fraction * args.max_train_steps)
+    total_steps = args.max_train_steps
+    start_replace_step = int(g1 * total_steps)   # Step where we start replacements
+    end_replace_step   = int(g2 * total_steps)   # Step after which we stop replacements
 
-    # Compute how many steps we wait between layer replacements
-    replacement_step_interval = max(1, steps_for_replacement // num_layers)
+    # We'll replace all num_layers modules evenly between these two points
+    replacement_window = end_replace_step - start_replace_step
+    replacement_interval = replacement_window // num_layers if num_layers > 0 else replacement_window
 
     layers_replaced = 0
-    next_replacement_step = replacement_step_interval
+    next_replacement_step = start_replace_step
 
-    ################################################################################
-    # Main Training Loop
-    ################################################################################
+    completed_steps = 0
+    progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
+    progress_bar.update(completed_steps)
 
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
 
-        # If resuming from checkpoint
+        # If you're using checkpoint resumption, you can leave this logic:
         if args.resume_from_checkpoint and epoch == starting_epoch and resume_step is not None:
             active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
         else:
             active_dataloader = train_dataloader
 
         for step, batch in enumerate(active_dataloader):
-            
-            # 1) Check if we need to replace another layer (during the G% replacement window).
-            #    Only do this if we haven't replaced all layers yet and we're still within
-            #    the progressive replacement phase (completed_steps < steps_for_replacement).
-            if (completed_steps >= next_replacement_step 
-                and layers_replaced < num_layers
-                and completed_steps < steps_for_replacement):
-                
-                logger.info(
-                    f"Replacing layer {layers_replaced} at global step {completed_steps}."
-                )
-                model = replace_one_layer(model, layers_replaced, config, args, check_weights_allclose)
-                layers_replaced += 1
-
-                # Schedule next replacement step
-                next_replacement_step += replacement_step_interval
-
-                # Rebuild optimizer & scheduler and reprepare
-                optimizer, lr_scheduler, overrode_max_train_steps_flag = build_optimizer_and_scheduler(
-                    model, args, train_dataloader
-                )
-                model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
-                    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
-                )
-                model.train()
-            
-            # 2) Forward pass
+            # Forward pass
             outputs = model(**batch)
             loss = outputs.loss
 
-            # 3) Distillation
+            # Distillation
             with torch.no_grad():
                 teacher_outputs = teacher(**batch)
                 teacher_logits = teacher_outputs.logits
-            
+
             student_logits = outputs.logits
             dist_loss = distillation_loss_fn(
-                log_softmax(student_logits / temperature, dim=-1),
-                softmax(teacher_logits / temperature, dim=-1)
+                F.log_softmax(student_logits / temperature, dim=-1),
+                F.softmax(teacher_logits / temperature, dim=-1)
             )
-            # Example combining:
-            # alpha = 0.5
-            # loss = (1 - alpha) * loss + alpha * dist_loss * (temperature**2)
+            # e.g., loss = (1 - alpha)*loss + alpha*(dist_loss * temperature**2)
 
-            # 4) Backward
+            # Gradient accumulation
             loss = loss / args.gradient_accumulation_steps
             accelerator.backward(loss)
 
-            # 5) Step / LR schedule
-            if (step % args.gradient_accumulation_steps == 0) or (step == len(train_dataloader) - 1):
+            if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
                 progress_bar.update(1)
                 completed_steps += 1
 
-            # 6) Checkpointing
-            if isinstance(checkpointing_steps, int):
-                if completed_steps % checkpointing_steps == 0:
-                    output_dir = f"step_{completed_steps}"
-                    if args.output_dir is not None:
-                        output_dir = os.path.join(args.output_dir, output_dir)
-                    accelerator.save_state(output_dir)
+                # ---- Progressive Replacement Between G1% and G2% ----
+                if (completed_steps >= next_replacement_step 
+                        and completed_steps <= end_replace_step
+                        and layers_replaced < num_layers):
+                    # Replace one more layer
+                    logger.info(f"Replacing layer {layers_replaced} at step {completed_steps} ...")
+                    model = replace_one_layer(model, layers_replaced, config, args, check_weights_allclose)
+                    layers_replaced += 1
 
-            # End loop if we've hit max train steps
+                    next_replacement_step += replacement_interval
+
+                    # Rebuild optimizer/scheduler to include new params
+                    optimizer, lr_scheduler, overrode_max_train_steps_flag = build_optimizer_and_scheduler(
+                        model, args, train_dataloader
+                    )
+                    # Re-prepare with accelerator
+                    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
+                        model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
+                    )
+                    model.train()
+
+            # Check for max steps
             if completed_steps >= args.max_train_steps:
                 break
 
-        # EVALUATION PHASE
+        # ------ EVALUATION AFTER EACH EPOCH (Unchanged) ------
         model.eval()
         samples_seen = 0
         for step, batch in enumerate(eval_dataloader):
@@ -973,18 +961,13 @@ def main():
                 outputs = model(**batch)
             predictions = outputs.logits.argmax(dim=-1) if not is_regression else outputs.logits.squeeze()
             predictions, references = accelerator.gather((predictions, batch["labels"]))
-
-            # If multi-process: handle duplicates in the last batch
             if accelerator.num_processes > 1:
                 if step == len(eval_dataloader) - 1:
                     predictions = predictions[: len(eval_dataloader.dataset) - samples_seen]
                     references = references[: len(eval_dataloader.dataset) - samples_seen]
                 else:
                     samples_seen += references.shape[0]
-            metric.add_batch(
-                predictions=predictions,
-                references=references,
-            )
+            metric.add_batch(predictions=predictions, references=references)
 
         eval_metric = metric.compute()
         logger.info(f"[EVAL] epoch {epoch}: {eval_metric}")
