@@ -4,6 +4,28 @@ import random
 import re
 import unicodedata
 
+StopWordsList = [
+    'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', "you're", "you've", 
+    "you'll", "you'd", 'your', 'yours','yourself', 'yourselves', 'he', 'him', 'his', 'himself', 
+    'she', "she's", 'her', 'hers', 'herself', 'it', "it's", 'its', 'itself','they', 'them', 
+    'their', 'theirs', 'themselves', 'this', 'that', "that'll", 'these', 'those', 'am', 'is', 
+    'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 
+    'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 'because','as', 'until', 'while', 
+    'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during', 
+    'before', 'after','above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 
+    'over', 'under', 'again', 'further', 'then', 'once', 'here','there', 'all', 'any', 'both', 
+    'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 
+    'same', 'so','than', 'too', 'very', 's', 't', 'can', 'will', 'just', 'don', "don't", 'should', 
+    "should've", 'now', 'd', 'll', 'm', 'o', 're', 've','y', 'ain', 'aren', "aren't", 'couldn', 
+    "couldn't", 'didn', "didn't", 'doesn', "doesn't", 'hadn', "hadn't", 'hasn', "hasn't", 'haven',
+    "haven't", 'isn', "isn't", 'ma', 'mightn', "mightn't", 'mustn', "mustn't", 'needn', 
+    "needn't", 'shan', "shan't", 'shouldn', "shouldn't",'wasn', "wasn't", 'weren', "weren't", 
+    'won', "won't", 'wouldn', "wouldn't", "'s", "'re"
+]
+import torch
+import numpy as np
+import random
+import re
 def augment_sentence(sentence, 
                      glove_file, 
                      how_many,
@@ -20,7 +42,7 @@ def augment_sentence(sentence,
         glove_file (str): Path to the GloVe embedding file.
         how_many (int): Number of augmented variants to attempt to generate.
         model (PreTrainedModel): An instantiated MLM model (e.g., RoBERTa).
-        tokenizer (PreTrainedTokenizer): The tokenizer corresponding to the MLM model.
+        tokenizer (PreTrainedTokenizer): Tokenizer corresponding to the MLM model.
         M (int): Number of top candidate words to consider for replacements. Default: 15.
         p (float): Probability threshold to replace a given token with one of the candidate synonyms. Default: 0.4.
         vocab_size (int): How many GloVe vectors to load for speed. Default: 100000.
@@ -29,34 +51,9 @@ def augment_sentence(sentence,
         List[str]: A list of up to `how_many` augmented sentences.
     """
 
-
-    # --------------------------------------------------
-    # Stopwords
-    # --------------------------------------------------
-    StopWordsList = [
-        'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', "you're", "you've", 
-        "you'll", "you'd", 'your', 'yours','yourself', 'yourselves', 'he', 'him', 'his', 'himself', 
-        'she', "she's", 'her', 'hers', 'herself', 'it', "it's", 'its', 'itself','they', 'them', 
-        'their', 'theirs', 'themselves', 'this', 'that', "that'll", 'these', 'those', 'am', 'is', 
-        'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 
-        'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 'because','as', 'until', 'while', 
-        'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during', 
-        'before', 'after','above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 
-        'over', 'under', 'again', 'further', 'then', 'once', 'here','there', 'all', 'any', 'both', 
-        'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 
-        'same', 'so','than', 'too', 'very', 's', 't', 'can', 'will', 'just', 'don', "don't", 'should', 
-        "should've", 'now', 'd', 'll', 'm', 'o', 're', 've','y', 'ain', 'aren', "aren't", 'couldn', 
-        "couldn't", 'didn', "didn't", 'doesn', "doesn't", 'hadn', "hadn't", 'hasn', "hasn't", 'haven',
-        "haven't", 'isn', "isn't", 'ma', 'mightn', "mightn't", 'mustn', "mustn't", 'needn', 
-        "needn't", 'shan', "shan't", 'shouldn', "shouldn't",'wasn', "wasn't", 'weren', "weren't", 
-        'won', "won't", 'wouldn', "wouldn't", "'s", "'re"
-    ]
-
-    # --------------------------------------------------
-    # Helper functions
-    # --------------------------------------------------
     def _is_valid(string):
-        return True if not re.search('[^a-z]', string) else False
+        """Ensure valid words only (alphabetic and not stopwords)."""
+        return string.isalpha() and string.lower() not in StopWordsList
 
     def prepare_embedding_retrieval(glove_path, vocab_size=100000):
         cnt = 0
@@ -87,10 +84,8 @@ def augment_sentence(sentence,
 
     emb_norm, vocab, ids_to_tokens = prepare_embedding_retrieval(glove_file, vocab_size)
 
-    # --------------------------------------------------
-    # Core Augmentation Logic
-    # --------------------------------------------------
     def _word_distance(word):
+        """Get top-M most similar words using GloVe embeddings."""
         word = word.lower()
         if word not in vocab:
             return []
@@ -101,9 +96,11 @@ def augment_sentence(sentence,
         dist[word_idx] = -np.Inf
 
         candidate_ids = np.argsort(-dist)[:M]
-        return [ids_to_tokens[idx] for idx in candidate_ids][:M]
+        candidates = [ids_to_tokens[idx] for idx in candidate_ids if _is_valid(ids_to_tokens[idx])]
+        return candidates
 
     def _masked_language_model(sentence, mask_id):
+        """Get top-M predictions from the masked language model."""
         tokens = tokenizer(sentence, return_tensors="pt", truncation=True).to(model.device)
         with torch.no_grad():
             outputs = model(**tokens)
@@ -111,19 +108,19 @@ def augment_sentence(sentence,
 
         candidates_ids = torch.argsort(logits, descending=True)[:M]
         candidates = tokenizer.convert_ids_to_tokens(candidates_ids)
-        return [c for c in candidates if "Ġ" not in c]  # Exclude RoBERTa subwords
+        return [c for c in candidates if _is_valid(c)]  # Ensure valid candidates
 
     tokens = tokenizer.tokenize(sentence)
     candidate_words = {}
 
     for idx, word in enumerate(tokens):
         word_lower = word.lower()
-        if _is_valid(word_lower) and word_lower not in StopWordsList:
+        if _is_valid(word_lower):
             if "Ġ" not in word:
                 candidates = _masked_language_model(sentence, idx)
             else:
                 candidates = _word_distance(word)
-            candidate_words[idx] = candidates
+            candidate_words[idx] = candidates or [word]  # Fallback to original word if empty
 
     augmented_sentences = []
     for _ in range(how_many):
@@ -132,7 +129,9 @@ def augment_sentence(sentence,
             if random.random() < p:
                 new_tokens[idx] = random.choice(candidate_words[idx])
 
-        augmented_sentences.append(" ".join(new_tokens))
+        # Reconstruct the sentence, removing RoBERTa-specific Ġ tokens
+        reconstructed_sentence = tokenizer.convert_tokens_to_string(new_tokens)
+        augmented_sentences.append(reconstructed_sentence)
 
     return augmented_sentences
 
@@ -146,6 +145,7 @@ def augment_dataset(raw_datasets, task_name, task_to_keys, aug_count=10, glove_f
     Args:
         raw_datasets (DatasetDict): The dataset containing train/validation/test splits.
         task_name (str): The name of the task (e.g., "cola", "mrpc", etc.).
+        task_to_keys (dict): A dictionary mapping task names to sentence keys.
         aug_count (int): Number of augmentations to generate for each entry.
         glove_file (str): Path to the GloVe embedding file.
         model (PreTrainedModel): Instantiated MLM model (e.g., RoBERTa).
@@ -154,8 +154,6 @@ def augment_dataset(raw_datasets, task_name, task_to_keys, aug_count=10, glove_f
     Returns:
         DatasetDict: The augmented dataset with the `train` split modified.
     """
-    
-
     if task_name not in task_to_keys:
         raise ValueError(f"Task '{task_name}' not recognized in task_to_keys.")
 
@@ -174,27 +172,33 @@ def augment_dataset(raw_datasets, task_name, task_to_keys, aug_count=10, glove_f
         # Extract sentences to augment
         sentences = [entry[key] for key in sentence_keys if key and key in entry]
 
-        # Generate augmented examples for each sentence
-        for _ in range(aug_count):
-            augmented_entry = entry.copy()  # Preserve original structure
+        # Generate augmented examples for all sentences in one call
+        augmented_entries = []  # Collect all augmented versions for this entry
+        for key, sentence in zip(sentence_keys, sentences):
+            if key and sentence:  # Ensure key and sentence are valid
+                augmented_sentences = augment_sentence(
+                    sentence=sentence,
+                    glove_file=glove_file,
+                    how_many=aug_count,
+                    model=model,
+                    tokenizer=tokenizer,
+                )
+            else:
+                augmented_sentences = [sentence] * aug_count  # Fallback to original if invalid
 
-            for key, sentence in zip(sentence_keys, sentences):
-                if key and sentence:  # Ensure key and sentence are valid
-                    augmented_sentences = augment_sentence(
-                        sentence=sentence,
-                        glove_file=glove_file,
-                        how_many=1,
-                        model=model,
-                        tokenizer=tokenizer,
-                    )
-                    augmented_entry[key] = augmented_sentences[0]
+            # Create separate augmented entries for each augmented sentence
+            for augmented_sentence in augmented_sentences:
+                augmented_entry = entry.copy()  # Preserve original structure
+                augmented_entry[key] = augmented_sentence
+                augmented_entries.append(augmented_entry)
 
-            augmented_data.append(augmented_entry)
+        augmented_data.extend(augmented_entries)  # Add all augmented entries for this example
 
         # Optionally, print a few examples for debugging
         if idx < 3:  # Show only the first 3 entries for brevity
             print(f"Original Entry {idx}: {entry}")
-            print(f"Augmented Entry {idx}: {augmented_entry}")
+            for i, augmented_entry in enumerate(augmented_entries[:aug_count]):
+                print(f"Augmented Entry {idx}-{i}: {augmented_entry}")
             print("-" * 50)
 
     # Combine original and augmented data
@@ -202,3 +206,4 @@ def augment_dataset(raw_datasets, task_name, task_to_keys, aug_count=10, glove_f
     raw_datasets["train"] = augmented_train
 
     return raw_datasets
+

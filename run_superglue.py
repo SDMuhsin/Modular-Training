@@ -415,20 +415,27 @@ def main():
         Data Augmentation, glove based
     
     '''
-    from transformers import RobertaTokenizer, RobertaForMaskedLM
-    from datasets import load_from_disk
-    tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
-    model = RobertaForMaskedLM.from_pretrained("roberta-base")
-    augmented_datasets = augment_dataset(
-        raw_datasets=raw_datasets,
-        task_name=args.task_name,
-        task_to_keys=task_to_keys,
-        aug_count=1,  # Number of augmented examples per entry
-        glove_file='./glove-embeddings/glove.6B.100d.txt',
-        model=model,
-        tokenizer=tokenizer
-    )
+    aug_count = 2;
+    aug_dataset_path = os.path.join(f"{args.task_name}_augdby_{aug_count}")
 
+    if not os.path.exists(aug_dataset_path):
+
+        from transformers import RobertaTokenizer, RobertaForMaskedLM
+        from datasets import load_from_disk
+        tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+        model = RobertaForMaskedLM.from_pretrained("roberta-base")
+        raw_datasets = augment_dataset(
+            raw_datasets=raw_datasets,
+            task_name=args.task_name,
+            task_to_keys=task_to_keys,
+            aug_count=aug_count,  # Number of augmented examples per entry
+            glove_file='./glove-embeddings/glove.6B.100d.txt',
+            model=model,
+            tokenizer=tokenizer
+        )
+    else:
+        raw_datasets = datasets.load_from_disk(aug_dataset_path)
+        
 
     # Labels
     if args.task_name is not None:
