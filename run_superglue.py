@@ -422,9 +422,13 @@ def main():
     #raw_datasets["train"] = raw_datasets["train"].select(range(0,3)) # For debugging
     if not os.path.exists(aug_dataset_path):
 
+        from transformers import BertTokenizer, BertForMaskedLM
 
-        tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
-        model = RobertaForMaskedLM.from_pretrained("roberta-base")
+        #tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+        #model = RobertaForMaskedLM.from_pretrained("roberta-base")
+        tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        model = BertForMaskedLM.from_pretrained("bert-base-uncased")
+
         raw_datasets = augment_dataset(
             raw_datasets=raw_datasets,
             task_name=args.task_name,
