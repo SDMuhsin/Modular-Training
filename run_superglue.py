@@ -49,7 +49,8 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank 
 from low_rank_modules.modeling_roberta import RobertaForSequenceClassification, RobertaOutputLowRank, RobertaIntermediateLowRank, RobertaFFNLowRank, RobertaAttentionLowRank
-
+from transformers import RobertaTokenizer, RobertaForMaskedLM
+from datasets import load_from_disk
 from torch.nn import KLDivLoss
 from torch.nn.functional import softmax, log_softmax, kl_div
 
@@ -415,13 +416,13 @@ def main():
         Data Augmentation, glove based
     
     '''
-    aug_count = 2;
-    aug_dataset_path = os.path.join(f"{args.task_name}_augdby_{aug_count}")
-
+    aug_count =10;
+    aug_dataset_path = os.path.join(save_dir,f"{args.task_name}_augdby_{aug_count}")
+    
+    #raw_datasets["train"] = raw_datasets["train"].select(range(0,3)) # For debugging
     if not os.path.exists(aug_dataset_path):
 
-        from transformers import RobertaTokenizer, RobertaForMaskedLM
-        from datasets import load_from_disk
+
         tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
         model = RobertaForMaskedLM.from_pretrained("roberta-base")
         raw_datasets = augment_dataset(
@@ -433,6 +434,7 @@ def main():
             model=model,
             tokenizer=tokenizer
         )
+        raw_datasets.save_to_disk(aug_dataset_path)
     else:
         raw_datasets = datasets.load_from_disk(aug_dataset_path)
         

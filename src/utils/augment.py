@@ -26,117 +26,148 @@ import torch
 import numpy as np
 import random
 import re
-def augment_sentence(sentence, 
-                     glove_file, 
-                     how_many,
-                     model, 
-                     tokenizer, 
-                     M=15, 
-                     p=0.4, 
-                     vocab_size=100000):
-    """
-    Augments a single sentence using TinyBERT's GloVe-based data augmentation methodology.
+from transformers import BasicTokenizer
+basic_toker = BasicTokenizer(do_lower_case=True)
 
-    Args:
-        sentence (str): The input sentence (string).
-        glove_file (str): Path to the GloVe embedding file.
-        how_many (int): Number of augmented variants to attempt to generate.
-        model (PreTrainedModel): An instantiated MLM model (e.g., RoBERTa).
-        tokenizer (PreTrainedTokenizer): Tokenizer corresponding to the MLM model.
-        M (int): Number of top candidate words to consider for replacements. Default: 15.
-        p (float): Probability threshold to replace a given token with one of the candidate synonyms. Default: 0.4.
-        vocab_size (int): How many GloVe vectors to load for speed. Default: 100000.
+def augment_sentence(sentence, glove_file, how_many, model, tokenizer, 
+                     M=15, p=0.4, vocab_size=100000):
 
-    Returns:
-        List[str]: A list of up to `how_many` augmented sentences.
-    """
 
-    def _is_valid(string):
-        """Ensure valid words only (alphabetic and not stopwords)."""
-        return string.isalpha() and string.lower() not in StopWordsList
-
+    # ------------------------------------------------------
+    # Prepare GloVe data
+    # ------------------------------------------------------
     def prepare_embedding_retrieval(glove_path, vocab_size=100000):
         cnt = 0
         words = []
         embeddings = {}
-
         with open(glove_path, 'r', encoding='utf-8') as fin:
             for line in fin:
                 items = line.strip().split()
                 words.append(items[0])
                 embeddings[items[0]] = [float(x) for x in items[1:]]
-
                 cnt += 1
                 if cnt == vocab_size:
                     break
-
         vocab = {w: idx for idx, w in enumerate(words)}
         ids_to_tokens = {idx: w for idx, w in enumerate(words)}
-
-        vector_dim = len(embeddings[ids_to_tokens[0]])
+        vector_dim = len(embeddings[words[0]])
         emb_matrix = np.zeros((vocab_size, vector_dim))
-        for word, v in embeddings.items():
-            emb_matrix[vocab[word], :] = v
-
+        for w, v in embeddings.items():
+            emb_matrix[vocab[w], :] = v
         d = (np.sum(emb_matrix ** 2, 1) ** 0.5)
         emb_norm = (emb_matrix.T / d).T
         return emb_norm, vocab, ids_to_tokens
 
     emb_norm, vocab, ids_to_tokens = prepare_embedding_retrieval(glove_file, vocab_size)
 
-    def _word_distance(word):
-        """Get top-M most similar words using GloVe embeddings."""
-        word = word.lower()
-        if word not in vocab:
+    # ------------------------------------------------------
+    # The original TinyBERT approach for a single token
+    # ------------------------------------------------------
+    def _word_augment(sentence, basic_token_idx, basic_token):
+        """
+        Re-tokenize with RoBERTa to see if the 'basic_token' 
+        is single-subword => use MLM 
+        else => use GloVe synonyms
+        """
+
+        roberta_subwords = tokenizer.tokenize(sentence)
+        roberta_subwords = [tokenizer.cls_token] + roberta_subwords
+        tokenized_len = len(roberta_subwords)
+
+        # find which subwords belong to the basic_token_idx-th basic token
+        token_idx = -1
+        word_piece_ids = []
+        for i in range(1, tokenized_len):
+            subw = roberta_subwords[i]
+            # new token if subw.startswith("Ġ") or i == 1
+            if subw.startswith("Ġ") or i == 1:
+                token_idx += 1
+            if token_idx == basic_token_idx:
+                word_piece_ids.append(i)
+
+        if len(word_piece_ids) == 0:
             return []
-        word_idx = vocab[word]
-        word_emb = emb_norm[word_idx]
 
-        dist = np.dot(emb_norm, word_emb.T)
-        dist[word_idx] = -np.Inf
+        # single subword => masked LM
+        if len(word_piece_ids) == 1:
+            # replace that subword with <mask>
+            mask_id = word_piece_ids[0]
+            roberta_subwords_copy = roberta_subwords[:]
+            roberta_subwords_copy[mask_id] = tokenizer.mask_token
+            input_ids = tokenizer.convert_tokens_to_ids(roberta_subwords_copy)
+            input_ids_tensor = torch.tensor([input_ids]).to(model.device)
+            with torch.no_grad():
+                outputs = model(input_ids_tensor)
+                logits = outputs.logits[0, mask_id]
+            top_candidates = torch.argsort(logits, descending=True)[:M]
+            words_ = tokenizer.convert_ids_to_tokens(top_candidates)
+            # Filter out subwords or special tokens
+            valid_words = []
+            for w in words_:
+                # We can require w.isalpha() 
+                # or strip punctuation, or more advanced checks:
+                if w.isalpha() and w.lower() not in StopWordsList:
+                    valid_words.append(w)
+            return valid_words
 
-        candidate_ids = np.argsort(-dist)[:M]
-        candidates = [ids_to_tokens[idx] for idx in candidate_ids if _is_valid(ids_to_tokens[idx])]
-        return candidates
+        else:
+            # multiple subwords => use GloVe synonyms
+            token_lower = basic_token.lower()
+            if token_lower not in vocab:
+                return []
+            token_idx_ = vocab[token_lower]
+            word_emb = emb_norm[token_idx_]
+            dist = np.dot(emb_norm, word_emb.T)
+            dist[token_idx_] = -np.Inf
+            candidate_ids = np.argsort(-dist)[:M]
+            candidate_words = []
+            for cid in candidate_ids:
+                w = ids_to_tokens[cid]
+                if w.isalpha() and w.lower() not in StopWordsList:
+                    candidate_words.append(w)
+            return candidate_words
 
-    def _masked_language_model(sentence, mask_id):
-        """Get top-M predictions from the masked language model."""
-        tokens = tokenizer(sentence, return_tensors="pt", truncation=True).to(model.device)
-        with torch.no_grad():
-            outputs = model(**tokens)
-            logits = outputs.logits[0, mask_id]
+    # ------------------------------------------------------
+    # MAIN AUGMENT LOGIC
+    # ------------------------------------------------------
+    # Basic tokens for indexing
+    basic_tokens = basic_toker.tokenize(sentence)  
+    # e.g. ["the", "woman", "tolerated", "her", "friend", "'s", ...]
 
-        candidates_ids = torch.argsort(logits, descending=True)[:M]
-        candidates = tokenizer.convert_ids_to_tokens(candidates_ids)
-        return [c for c in candidates if _is_valid(c)]  # Ensure valid candidates
+    # For each basic token, find candidate synonyms
+    candidate_words_map = {}
+    for i, t in enumerate(basic_tokens):
+        # strip punctuation from t? or check isalpha?
+        # 'friend' vs "friend" vs "friend's"
+        # The original code ignores tokens with non-alpha chars => we do the same:
+        if re.match("^[a-zA-Z]+$", t):
+            # also skip if in stopwords
+            if t.lower() not in StopWordsList:
+                cands = _word_augment(sentence, i, t)
+                # fallback to original if empty
+                candidate_words_map[i] = cands if len(cands) > 0 else [t]
 
-    tokens = tokenizer.tokenize(sentence)
-    candidate_words = {}
-
-    for idx, word in enumerate(tokens):
-        word_lower = word.lower()
-        if _is_valid(word_lower):
-            if "Ġ" not in word:
-                candidates = _masked_language_model(sentence, idx)
-            else:
-                candidates = _word_distance(word)
-            candidate_words[idx] = candidates or [word]  # Fallback to original word if empty
-
-    augmented_sentences = []
+    # Generate up to how_many augmentations
+    augmented_sents = []
     for _ in range(how_many):
-        new_tokens = tokens[:]
-        for idx in candidate_words.keys():
+        new_tokens = basic_tokens[:]  # copy
+        # randomly replace each valid token with prob p
+        for idx in candidate_words_map:
             if random.random() < p:
-                new_tokens[idx] = random.choice(candidate_words[idx])
+                new_tokens[idx] = random.choice(candidate_words_map[idx])
 
-        # Reconstruct the sentence, removing RoBERTa-specific Ġ tokens
-        reconstructed_sentence = tokenizer.convert_tokens_to_string(new_tokens)
-        augmented_sentences.append(reconstructed_sentence)
+        # rejoin into a final string
+        # note: BasicTokenizer uses whitespace separation
+        # If you want to replicate punctuation logic carefully, you might have to 
+        # do more advanced re-insertion, but here we do a simple join.
+        new_sent = " ".join(new_tokens)
+        augmented_sents.append(new_sent)
 
-    return augmented_sentences
+    return augmented_sents
 
 
-from datasets import DatasetDict
+
+from datasets import Dataset, DatasetDict
 
 def augment_dataset(raw_datasets, task_name, task_to_keys, aug_count=10, glove_file=None, model=None, tokenizer=None):
     """
@@ -194,15 +225,29 @@ def augment_dataset(raw_datasets, task_name, task_to_keys, aug_count=10, glove_f
 
         augmented_data.extend(augmented_entries)  # Add all augmented entries for this example
 
-        # Optionally, print a few examples for debugging
-        if idx < 3:  # Show only the first 3 entries for brevity
+        # Debugging: Print a few examples
+        if idx < len(train_split):  # Show only the first 3 entries for brevity
             print(f"Original Entry {idx}: {entry}")
             for i, augmented_entry in enumerate(augmented_entries[:aug_count]):
                 print(f"Augmented Entry {idx}-{i}: {augmented_entry}")
             print("-" * 50)
+        else:
+            print(f"Completed: {idx + 1} / {len(train_split)}")
 
     # Combine original and augmented data
-    augmented_train = train_split.add_items(augmented_data)
+    combined_data = train_split.to_dict()
+    for key in combined_data.keys():
+        combined_data[key].extend([aug[key] for aug in augmented_data])
+
+    # Re-index the data to ensure unique `idx` values
+    for new_idx, item in enumerate(zip(*combined_data.values())):
+        combined_data["idx"][new_idx] = new_idx  # Assign new index
+
+    # Create a new dataset with the combined data while preserving features
+    augmented_train = Dataset.from_dict(combined_data)
+    augmented_train = augmented_train.cast(train_split.features)  # Preserve schema (features)
+
+    # Update the dataset
     raw_datasets["train"] = augmented_train
 
     return raw_datasets
