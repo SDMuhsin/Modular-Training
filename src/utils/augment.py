@@ -161,6 +161,12 @@ def augment_sentence(sentence, glove_file, how_many, model, tokenizer,
         # If you want to replicate punctuation logic carefully, you might have to 
         # do more advanced re-insertion, but here we do a simple join.
         new_sent = " ".join(new_tokens)
+
+
+        new_sent = new_sent.replace("Ġ", "") # Unique to ROberta
+        new_sent = re.sub(r"\s+'", "'", new_sent)
+        new_sent = re.sub(r"'\s+", "'", new_sent)
+        new_sent = re.sub(r"(\w)\s+\.", r"\1.", new_sent)
         augmented_sents.append(new_sent)
 
     return augmented_sents

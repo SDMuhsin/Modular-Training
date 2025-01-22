@@ -416,7 +416,7 @@ def main():
         Data Augmentation, glove based
     
     '''
-    aug_count =10;
+    aug_count =3;
     aug_dataset_path = os.path.join(save_dir,f"{args.task_name}_augdby_{aug_count}")
     
     #raw_datasets["train"] = raw_datasets["train"].select(range(0,3)) # For debugging
