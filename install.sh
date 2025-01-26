@@ -8,7 +8,7 @@
 
 module load python/3.11.5
 module load arrow/16.1.0
-source ../torch_sayed/bin/activate
+source ./env/bin/activate
 
 python3 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 python3 -m pip install nltk nlpaug numpy pandas
@@ -19,7 +19,7 @@ python3 -m pip install nltk nlpaug numpy pandas
 #scp -r ./saves sdmuhsin@beluga.alliancecan.ca://home/sdmuhsin/scratch/sdmuhsin/transformers/modular-training-super-glue
 #scp -r ~/nltk_data sdmuhsin@beluga.alliancecan.ca:/home/sdmuhsin/scratch/sdmuhsin/transformers/modular-training-super-glue/nltk_data
 python3 -m pip install urllib3
-python3 -m pip install -e ../transformers/
+python3 -m pip install ./downloads/libsrc/transformers
 python3 -m pip install scipy==1.10.1 dill
 python3 -m pip install accelerate -U
 python3 -m pip install scikit-learn

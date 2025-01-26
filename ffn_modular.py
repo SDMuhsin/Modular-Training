@@ -188,7 +188,7 @@ def main():
     optimizer = optim.Adam(new_ffn_layer.parameters(), lr=1e-4)
     num_epochs = int(args.epochs)
 
-    device = torch.device("cuda:1")
+    device = torch.device("cuda:0")
     original_ffn_layer = original_ffn_layer.to(device)
     new_ffn_layer = new_ffn_layer.to(device)
     new_ffn_layer.train()
