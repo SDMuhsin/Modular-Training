@@ -342,7 +342,8 @@ from nltk.corpus import stopwords
 import random
 
 # Ensure you have the stopwords dataset downloaded
-nltk.download('stopwords')
+nltk.data.path.append('./downloads')
+nltk.download('stopwords', download_dir='./downloads')
 stop_words = set(stopwords.words('english'))
 
 

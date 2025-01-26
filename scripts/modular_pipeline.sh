@@ -46,7 +46,7 @@ do
 	fi
 	echo "Data generated succesfully"
 	
-	#unset CUDA_VISIBLE_DEVICES
+	unset CUDA_VISIBLE_DEVICES
 
 
 	if [ "$do_modular_train_sa" = "y" ] && [ "$do_modular_train_bl" = "y" ];
