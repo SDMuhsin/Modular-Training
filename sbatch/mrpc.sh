@@ -4,8 +4,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=3
 #SBATCH --gpus=2           # 
-#SBATCH --mem=24000M
-#SBATCH --time=1-00:00
+#SBATCH --mem=32000M
+#SBATCH --time=3-00:00
 #SBATCH --chdir=/scratch/sdmuhsin/Modular-Training
 #SBATCH --output=mrpc-%N-%j.out
 
