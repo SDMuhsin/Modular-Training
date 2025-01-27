@@ -523,9 +523,9 @@ def main():
     os.environ['PYTHONHASHSEED'] = str(data_args.random_seed)
     
     # Fix for memory ballooning
-    training_args.eval_accumulation_steps = 2
-    training_args.return_dict = True
-    training_args.compute_loss = None
+    #training_args.eval_accumulation_steps = 2
+    #training_args.return_dict = True
+    #training_args.compute_loss = None
 
     model_name_short = model_args.model_name_or_path.split("/")[-1]
     config_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_config")
@@ -995,8 +995,38 @@ def main():
 
             self.encoder_idx = encoder_idx
             self.batch_idx = 0
-
         def __call__(self, module, inputs, outputs):
+            base_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/mha"
+
+            # Create the input folder
+            input_save_folder = f"{base_save_folder}/inputs/encoder_{self.encoder_idx}"
+            os.makedirs(input_save_folder, exist_ok=True)
+
+            # Move inputs to CPU
+            a_cpu = inputs[0].detach().cpu()
+            b_cpu = inputs[1].detach().cpu()  # attention mask
+
+            torch.save(a_cpu, f"{input_save_folder}/a_batch_{self.batch_idx}.pt")
+            torch.save(b_cpu, f"{input_save_folder}/b_batch_{self.batch_idx}.pt")
+
+            # Free GPU memory references
+            del a_cpu, b_cpu
+
+            # Create the output folder
+            output_save_folder = f"{base_save_folder}/outputs/encoder_{self.encoder_idx}"
+            os.makedirs(output_save_folder, exist_ok=True)
+
+            # Move outputs to CPU
+            o_cpu = outputs[0].detach().cpu()
+
+            torch.save(o_cpu, f"{output_save_folder}/o_batch_{self.batch_idx}.pt")
+
+            # Free GPU memory references
+            del o_cpu
+
+            self.batch_idx += 1
+
+        def depracated_call(self, module, inputs, outputs):
 
             base_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/mha"
             
@@ -1044,8 +1074,25 @@ def main():
         def __init__(self,encoder_idx):
             self.encoder_idx = encoder_idx
             self.batch_idx = 0
-
         def __call__(self, module, inputs, outputs):
+            base_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/ffn"
+            input_save_folder = f"{base_save_folder}/inputs/encoder_{self.encoder_idx}"
+            output_save_folder = f"{base_save_folder}/outputs/encoder_{self.encoder_idx}"
+            os.makedirs(input_save_folder, exist_ok=True)
+            os.makedirs(output_save_folder, exist_ok=True)
+
+            # Move inputs/outputs to CPU
+            h_cpu = inputs[0].detach().cpu()
+            o_cpu = outputs.detach().cpu()
+
+            torch.save(h_cpu, f"{input_save_folder}/h_batch_{self.batch_idx}.pt")
+            torch.save(o_cpu, f"{output_save_folder}/o_batch_{self.batch_idx}.pt")
+
+            # Free GPU memory references
+            del h_cpu, o_cpu
+
+            self.batch_idx += 1
+        def depracated_call(self, module, inputs, outputs):
             
             input_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/ffn/inputs/encoder_{self.encoder_idx}"
             create_directory_if_not_exists(input_save_folder)
