@@ -499,6 +499,26 @@ def save_data(data, file_path):
     with open(file_path, 'wb') as f:
         pickle.dump(data, f)
 
+class CPUTrainer(Trainer):
+    def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
+        """
+        Custom prediction_step to move logits to CPU.
+        """
+        # Call the superclass to perform the forward pass
+        loss, logits, labels = super().prediction_step(
+            model,
+            inputs,
+            prediction_loss_only,
+            ignore_keys=ignore_keys
+        )
+        if logits is not None:
+            # Extract the first element if logits is a tuple
+            if isinstance(logits, tuple):
+                logits = logits[0]
+            # Detach and move to CPU
+            logits = logits.detach().cpu()
+        return (loss, logits, labels)
+
 save_dir = "./downloads"
 
 def main():
@@ -1111,8 +1131,8 @@ def main():
                 modelbert.transformer.layer[i].attention.register_forward_hook(hooks[i])
                 modelbert.transformer.layer[i].ffn.register_forward_hook(ffn_hooks[i])
                 modelbert.transformer.layer[i].register_forward_hook(layer_hooks[i])
-
-    trainer = Trainer(
+    
+    trainer = CPUTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
