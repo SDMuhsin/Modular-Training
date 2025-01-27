@@ -1026,35 +1026,6 @@ def main():
 
             self.batch_idx += 1
 
-        def depracated_call(self, module, inputs, outputs):
-
-            base_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/mha"
-            
-            # Save inputs
-            input_save_folder = f"{base_save_folder}/inputs/encoder_{self.encoder_idx}"
-            create_directory_if_not_exists(input_save_folder)
-
-            a = inputs[0]
-            b = inputs[1]
-            
-            if(b == None):
-                print("======= b is None, shape of a  : ", a.shape)
-            assert a != None
-            assert b != None, f"b (attention) output is Null for batch id = {self.batch_idx}"
-
-            torch.save(a, f"{input_save_folder}/a_batch_{self.batch_idx}.pt") # Hidden state
-            torch.save(b, f"{input_save_folder}/b_batch_{self.batch_idx}.pt") # Attention mask
-
-            
-            # Save outputs
-            output_save_folder = f"{base_save_folder}/outputs/encoder_{self.encoder_idx}"
-            create_directory_if_not_exists(output_save_folder)
-
-            o = outputs[0]
-            assert o != None, f"output of attention at batch id = {self.batch_idx} is None"
-            torch.save(o, f"{output_save_folder}/o_batch_{self.batch_idx}.pt")
-            
-            self.batch_idx += 1
 
     class AttentionHook:
         
@@ -1092,20 +1063,7 @@ def main():
             del h_cpu, o_cpu
 
             self.batch_idx += 1
-        def depracated_call(self, module, inputs, outputs):
-            
-            input_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/ffn/inputs/encoder_{self.encoder_idx}"
-            create_directory_if_not_exists(input_save_folder)
-            output_save_folder = f"./saves/{model_args.model_name_or_path}/{data_args.task_name}/ffn/outputs/encoder_{self.encoder_idx}"
-            create_directory_if_not_exists(output_save_folder)
 
-            o = outputs
-            torch.save(o, f"{output_save_folder}/o_batch_{self.batch_idx}.pt")
-            
-            h = inputs[0]
-            torch.save(h, f"{input_save_folder}/h_batch_{self.batch_idx}.pt")
-
-            self.batch_idx += 1
     
     class LayerHook:
         def __init__(self,encoder_idx):
