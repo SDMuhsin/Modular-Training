@@ -521,6 +521,11 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.environ['PYTHONHASHSEED'] = str(data_args.random_seed)
+    
+    # Fix for memory ballooning
+    training_args.eval_accumulation_steps = 2
+    training_args.return_dict = True
+    training_args.compute_loss = None
 
     model_name_short = model_args.model_name_or_path.split("/")[-1]
     config_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_config")
