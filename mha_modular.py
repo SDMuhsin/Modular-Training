@@ -92,6 +92,85 @@ parser.add_argument("--random_seed",type=int)
 parser.add_argument("--multiplier",type=int)
 args = parser.parse_args()
 
+def copy_attn_weights_simple(
+    old_attn: nn.Module, 
+    new_attn: nn.Module, 
+    compression: int
+):
+    """
+    Partially copy weights from a full-rank RobertaAttention block
+    into a low-rank RobertaAttentionLowRank block.
+
+    Args:
+        old_attn: The original, full-rank RobertaAttention module.
+                  (Contains old_attn.self.{query,key,value} and old_attn.output.dense)
+        new_attn: The new, low-rank RobertaAttentionLowRank module.
+                  (Contains new_attn.self.{query_reduce,query_expand,...} etc.)
+        compression: Compression factor (int).
+    """
+    # ---- Q, K, V from old to new ----
+    # Shapes in old_attn.self.query.weight: (all_head_size, hidden_size)
+    # Shapes in new_attn.self.query_reduce.weight: (all_head_size//compression, hidden_size)
+    # Shapes in new_attn.self.query_expand.weight: (all_head_size, all_head_size//compression)
+
+    with torch.no_grad():
+        old_q_w = old_attn.self.query.weight  # (all_head_size, hidden_size)
+        old_k_w = old_attn.self.key.weight
+        old_v_w = old_attn.self.value.weight
+
+        old_q_b = old_attn.self.query.bias    # (all_head_size,)
+        old_k_b = old_attn.self.key.bias
+        old_v_b = old_attn.self.value.bias
+
+        # Number of heads * head_dim
+        all_head_size = old_q_w.size(0)
+
+        # ----------------- Query -----------------
+        new_attn.self.query_reduce.weight.copy_(
+            old_q_w[: (all_head_size // compression), :]
+        )
+        new_attn.self.query_expand.weight.copy_(
+            old_q_w[:, : (all_head_size // compression)]
+        )
+        new_attn.self.query_expand.bias.copy_(old_q_b)
+
+        # ----------------- Key -----------------
+        new_attn.self.key_reduce.weight.copy_(
+            old_k_w[: (all_head_size // compression), :]
+        )
+        new_attn.self.key_expand.weight.copy_(
+            old_k_w[:, : (all_head_size // compression)]
+        )
+        new_attn.self.key_expand.bias.copy_(old_k_b)
+
+        # ----------------- Value -----------------
+        new_attn.self.value_reduce.weight.copy_(
+            old_v_w[: (all_head_size // compression), :]
+        )
+        new_attn.self.value_expand.weight.copy_(
+            old_v_w[:, : (all_head_size // compression)]
+        )
+        new_attn.self.value_expand.bias.copy_(old_v_b)
+
+    # ---- Output dense from old to new ----
+    # old_attn.output.dense.weight: (hidden_size, hidden_size)
+    # new_attn.output.dense_reduce.weight: (hidden_size//compression, hidden_size)
+    # new_attn.output.dense_expand.weight: (hidden_size, hidden_size//compression)
+
+    with torch.no_grad():
+        old_out_w = old_attn.output.dense.weight  # (hidden_size, hidden_size)
+        old_out_b = old_attn.output.dense.bias    # (hidden_size,)
+
+        hidden_size = old_out_w.size(0)
+
+        new_attn.output.dense_reduce.weight.copy_(
+            old_out_w[: (hidden_size // compression), :]
+        )
+        new_attn.output.dense_expand.weight.copy_(
+            old_out_w[:, : (hidden_size // compression)]
+        )
+        new_attn.output.dense_expand.bias.copy_(old_out_b)
+
 def main():
 
     set_seed(42)
@@ -176,7 +255,11 @@ def main():
     if( "roberta" in args.model_name.lower()):
         attention_layer = RobertaAttentionLowRank(config,compression=args.compression)
         original_sa     = model.roberta.encoder.layer[encoder_idx].attention
-
+        copy_attn_weights_simple(
+            old_attn=original_sa,
+            new_attn=attention_layer,
+            compression=args.compression
+        )		
     else:
         attention_layer =  MultiHeadSelfAttentionLowRank(config,compression=args.compression)
         original_sa = model.distilbert.transformer.layer[encoder_idx].attention
