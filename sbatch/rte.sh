@@ -18,7 +18,8 @@ which python3
 
 export PYTHONPATH="$PYTHONPATH:$(pwd)"
 
-./scripts/modular_pipeline.sh modroberta-rte-m200Aug3xMult1x 200 y y y y 2 y 3 rte 1
+#./scripts/modular_pipeline.sh modroberta-rte-m200Aug3xMult1x 200 y y y y 2 y 3 rte 1
+./scripts/modular_pipeline.sh modroberta-rte-m200Aug3xMult1x 200 n n n y 2 y 3 rte 1
 
 
 echo "Run complete"
