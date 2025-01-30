@@ -171,6 +171,112 @@ def copy_attn_weights_simple(
         )
         new_attn.output.dense_expand.bias.copy_(old_out_b)
 
+
+
+def truncated_svd(
+    weight: torch.Tensor, 
+    rank: int
+) -> (torch.Tensor, torch.Tensor):
+    """
+    Perform truncated SVD on 'weight' up to 'rank'.
+    Returns (expand_matrix, reduce_matrix) such that
+       weight ~ expand_matrix @ reduce_matrix
+    with shapes:
+       expand_matrix: (m, rank)
+       reduce_matrix: (rank, n).
+    """
+    # weight: (m, n)
+    # full_matrices=False => 
+    #    U: (m, min(m,n)),  S: (min(m,n)),  Vh: (min(m,n), n)
+    U, S, Vh = torch.linalg.svd(weight, full_matrices=False)
+
+    # Rank cannot exceed the smallest dimension
+    r = min(rank, S.size(0))  
+
+    # Truncate
+    U_r  = U[:, :r]               # (m, r)
+    S_r  = S[:r]                  # (r,)
+    Vh_r = Vh[:r, :]              # (r, n)
+
+    # sqrt(S) as a diagonal matrix => shape (r, r)
+    sqrtS_r = torch.sqrt(torch.diag(S_r))
+
+    # expand: (m, r) = U_r @ sqrtS_r
+    expand_matrix = U_r @ sqrtS_r
+
+    # reduce: (r, n) = sqrtS_r @ Vh_r
+    reduce_matrix = sqrtS_r @ Vh_r
+
+    return expand_matrix, reduce_matrix
+
+def copy_attn_weights_svd(
+    old_attn: nn.Module, 
+    new_attn: nn.Module, 
+    compression: int
+):
+    """
+    SVD-based initialization from a full-rank RobertaAttention block
+    ('old_attn') into a low-rank RobertaAttentionLowRank block ('new_attn').
+    
+    For each W in {query, key, value, output}, we do:
+        1. W = U S V^T  (via full or truncated SVD)
+        2. new_reduce.weight = sqrt(S) * V^T
+        3. new_expand.weight = U * sqrt(S)
+    Bias is copied directly to the 'expand' layer.
+    """
+    with torch.no_grad():
+        # ------------------------------------------------
+        # 1) Handle the Q / K / V projections
+        # ------------------------------------------------
+        # Each old linear: (out_features=all_head_size, in_features=hidden_size)
+        old_q_w = old_attn.self.query.weight   # (m, n)
+        old_k_w = old_attn.self.key.weight
+        old_v_w = old_attn.self.value.weight
+
+        old_q_b = old_attn.self.query.bias
+        old_k_b = old_attn.self.key.bias
+        old_v_b = old_attn.self.value.bias
+
+        # For Q/K/V:
+        #    new_*_reduce.weight: (all_head_size//compression, hidden_size)
+        #    new_*_expand.weight: (all_head_size, all_head_size//compression)
+        rank_qkv = new_attn.self.query_reduce.weight.shape[0]  # all_head_size // compression
+        
+        # ---------- Query -----------
+        expand, reduce = truncated_svd(old_q_w, rank_qkv)
+        new_attn.self.query_reduce.weight.copy_(reduce)  # shape (r, n)
+        new_attn.self.query_expand.weight.copy_(expand)  # shape (m, r)
+        new_attn.self.query_expand.bias.copy_(old_q_b)
+
+        # ---------- Key ------------
+        expand, reduce = truncated_svd(old_k_w, rank_qkv)
+        new_attn.self.key_reduce.weight.copy_(reduce)
+        new_attn.self.key_expand.weight.copy_(expand)
+        new_attn.self.key_expand.bias.copy_(old_k_b)
+
+        # ---------- Value ----------
+        expand, reduce = truncated_svd(old_v_w, rank_qkv)
+        new_attn.self.value_reduce.weight.copy_(reduce)
+        new_attn.self.value_expand.weight.copy_(expand)
+        new_attn.self.value_expand.bias.copy_(old_v_b)
+
+        # ------------------------------------------------
+        # 2) Handle the output projection (dense)
+        # ------------------------------------------------
+        # old_attn.output.dense.weight: (hidden_size, hidden_size)
+        # new_attn.output.dense_reduce.weight: (hidden_size//compression, hidden_size)
+        # new_attn.output.dense_expand.weight: (hidden_size, hidden_size//compression)
+        old_out_w = old_attn.output.dense.weight
+        old_out_b = old_attn.output.dense.bias
+
+        rank_out = new_attn.output.dense_reduce.weight.shape[0]  # hidden_size // compression
+        
+        expand, reduce = truncated_svd(old_out_w, rank_out)
+        new_attn.output.dense_reduce.weight.copy_(reduce)
+        new_attn.output.dense_expand.weight.copy_(expand)
+        # Copy bias to the 'expand' layer
+        new_attn.output.dense_expand.bias.copy_(old_out_b)
+
 def main():
 
     set_seed(42)
@@ -255,7 +361,7 @@ def main():
     if( "roberta" in args.model_name.lower()):
         attention_layer = RobertaAttentionLowRank(config,compression=args.compression)
         original_sa     = model.roberta.encoder.layer[encoder_idx].attention
-        copy_attn_weights_simple(
+        copy_attn_weights_svd(
             old_attn=original_sa,
             new_attn=attention_layer,
             compression=args.compression
