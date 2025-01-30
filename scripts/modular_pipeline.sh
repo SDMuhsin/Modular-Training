@@ -20,7 +20,7 @@ model_name="roberta-base"
 
 encoder_idx=0
 random_seed=42
-rm ./saves/"${task}_${aug_n}_augmented_dataset.pkl"
+rm ./saves/"${task}_${aug_n}_${job_name}_augmented_dataset.pkl"
 while [ $encoder_idx -le 11 ]
 do
 	rm  ./saves/$model_name/$task/* -r

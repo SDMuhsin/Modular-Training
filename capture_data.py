@@ -618,7 +618,7 @@ def main():
             num_labels = len(label_list)
 
     augment = True
-    dataset_path = f"./saves/{data_args.task_name}_{data_args.aug_n}_augmented_dataset.pkl"  # You can change the extension and serialization method
+    dataset_path = f"./saves/{data_args.task_name}_{data_args.aug_n}_${data_args.job_name}_augmented_dataset.pkl"  # You can change the extension and serialization method
 
     # Check if the dataset has been augmented and saved already
     if os.path.exists(dataset_path):
