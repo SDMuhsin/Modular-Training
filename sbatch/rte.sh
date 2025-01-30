@@ -4,7 +4,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=3
 #SBATCH --gpus=2           # 
-#SBATCH --mem=32000M
+#SBATCH --mem=16000M
 #SBATCH --time=4-00:00
 #SBATCH --chdir=/scratch/sdmuhsin/Modular-Training
 #SBATCH --output=mhainit-rte-%N-%j.out
