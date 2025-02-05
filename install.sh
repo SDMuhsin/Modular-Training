@@ -19,7 +19,7 @@ python3 -m pip install nltk nlpaug numpy pandas
 #scp -r ./saves sdmuhsin@beluga.alliancecan.ca://home/sdmuhsin/scratch/sdmuhsin/transformers/modular-training-super-glue
 #scp -r ~/nltk_data sdmuhsin@beluga.alliancecan.ca:/home/sdmuhsin/scratch/sdmuhsin/transformers/modular-training-super-glue/nltk_data
 python3 -m pip install urllib3
-python3 -m pip install ./downloads/libsrc/transformers
+python3 -m pip install ./downloads/libsrc/transformersv4.42.0.dev0
 python3 -m pip install scipy==1.10.1 dill
 python3 -m pip install accelerate -U
 python3 -m pip install scikit-learn

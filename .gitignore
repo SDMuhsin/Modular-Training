@@ -7,3 +7,4 @@ jiant
 run_sbatch.sh
 *.png
 **.pyc
+env

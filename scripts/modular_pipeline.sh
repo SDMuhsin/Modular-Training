@@ -88,7 +88,7 @@ then
 	  --last_mod_trained_for $epochs \
 	  --encoder_modularity $modularity\
 	  --encoder_compression $encoder_compression \
-	  --random_seed $random_seed 
+	  --random_seed $random_seed
 fi
 
 

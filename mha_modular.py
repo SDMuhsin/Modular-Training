@@ -361,11 +361,11 @@ def main():
     if( "roberta" in args.model_name.lower()):
         attention_layer = RobertaAttentionLowRank(config,compression=args.compression)
         original_sa     = model.roberta.encoder.layer[encoder_idx].attention
-        copy_attn_weights_svd(
+        '''copy_attn_weights_svd(
             old_attn=original_sa,
             new_attn=attention_layer,
             compression=args.compression
-        )		
+        )'''		
     else:
         attention_layer =  MultiHeadSelfAttentionLowRank(config,compression=args.compression)
         original_sa = model.distilbert.transformer.layer[encoder_idx].attention
