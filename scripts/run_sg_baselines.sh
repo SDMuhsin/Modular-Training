@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the array of TASK_NAMES
-TASK_NAMES=("rte")  #( "copa" "wsc" "wic" "cb" "boolq" "stsb" "rte" "mrpc" )
+TASK_NAMES=("copa" "wsc" "wic" "cb" "boolq" "stsb" "rte" "mrpc")
 
 # Define the array of MODEL_TYPES
 MODEL_TYPES=( "roberta-base" )  #("bert-base-uncased" "huawei-noah/TinyBERT_General_6L_768D" "google/mobilebert-uncased" "distilbert-base-uncased")
