@@ -20,7 +20,7 @@ model_name="roberta-base"
 
 encoder_idx=0
 random_seed=42
-rm ./saves/"${task}_${aug_n}_${job_name}_augmented_dataset.pkl"
+#rm ./saves/"${task}_${aug_n}_${job_name}_augmented_dataset.pkl"
 while [ $encoder_idx -le 11 ]
 do
 	rm  ./saves/$model_name/$task/* -r
@@ -77,7 +77,7 @@ then
 	echo "\n \n \n Run glue for job $job_name"
 	echo "Modularity : $modularity"
 
-	python3 run_superglue_augment.py \
+	python3 run_superglue.py \
 	  --model_name_or_path $model_name \
 	  --task_name $task \
 	  --per_device_train_batch_size 32 \
