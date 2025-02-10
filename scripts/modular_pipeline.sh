@@ -77,7 +77,7 @@ then
 	echo "\n \n \n Run glue for job $job_name"
 	echo "Modularity : $modularity"
 
-	python3 run_superglue.py \
+	python3 run_superglue_augment.py \
 	  --model_name_or_path $model_name \
 	  --task_name $task \
 	  --per_device_train_batch_size 32 \

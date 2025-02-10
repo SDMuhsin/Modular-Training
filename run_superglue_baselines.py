@@ -49,6 +49,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from evaluate import load
 from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank 
+from low_rank_modules.modeling_roberta import RobertaForSequenceClassification, RobertaOutputLowRank, RobertaIntermediateLowRank, RobertaFFNLowRank, RobertaAttentionLowRank
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.42.0.dev0")
@@ -236,11 +237,12 @@ save_dir = "./downloads"
 def main():
    
     args = parse_args()
-    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
-    # information sent is the one passed as arguments along with your Python/PyTorch versions.
-    config_path = os.path.join(save_dir, f"{args.task_name}_config")
-    tokenizer_path = os.path.join(save_dir, f"{args.task_name}_tokenizer")
-    model_path = os.path.join(save_dir, f"{args.task_name}_model")
+
+    model_name_short = args.model_name_or_path.split("/")[-1]
+    config_path = os.path.join(save_dir, f"{args.task_name}_{model_name_short}_config")
+    tokenizer_path = os.path.join(save_dir, f"{args.task_name}_{model_name_short}_tokenizer")
+    model_path = os.path.join(save_dir, f"{args.task_name}_{model_name_short}_model")
+    metric_path = os.path.join(save_dir, f"{args.task_name}_{model_name_short}_metric.pkl")
 
     random.seed(args.random_seed)
     np.random.seed(args.random_seed)
@@ -354,29 +356,64 @@ def main():
     
     print(set(raw_datasets['test']['label']))
 
+    if not os.path.exists(tokenizer_path):
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model_name_or_path,
+            trust_remote_code=args.trust_remote_code,
+        )
+        tokenizer.save_pretrained(tokenizer_path)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
 
-    config = AutoConfig.from_pretrained(
-        args.model_name_or_path,
-        num_labels=num_labels,
-        finetuning_task=args.task_name,
-        trust_remote_code=args.trust_remote_code,
-    )
+    
+    if not os.path.exists(config_path):
+        config = AutoConfig.from_pretrained(
+            args.model_name_or_path,
+            num_labels=num_labels,
+            finetuning_task=args.task_name,
+            trust_remote_code=args.trust_remote_code,
+        )
+        config.save_pretrained(config_path)
+    else:
+        print("LOAD FROM SAVE")
+        config = AutoConfig.from_pretrained(config_path)
 
-    # Load or save tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model_name_or_path,
-        use_fast= not args.use_slow_tokenizer,
-        trust_remote_code=args.trust_remote_code,
-    )
 
     # Load or save model
-    model = AutoModelForSequenceClassification.from_pretrained(
-        args.model_name_or_path,
-        from_tf=bool(".ckpt" in args.model_name_or_path),
-        config=config,
-        trust_remote_code=args.trust_remote_code,
-        ignore_mismatched_sizes=args.ignore_mismatched_sizes,
-    )
+
+    if not os.path.exists(model_path):
+
+        if ('roberta' in args.model_name_or_path.lower()):
+            model = RobertaForSequenceClassification.from_pretrained(
+                args.model_name_or_path,
+                config=config,
+                trust_remote_code = args.trust_remote_code,
+                ignore_mismatched_sizes= args.ignore_mismatched_sizes
+                
+            )
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(
+                args.model_name_or_path,
+                from_tf=bool(".ckpt" in args.model_name_or_path),
+                config=config,
+                cache_dir=args.cache_dir,
+                revision=args.model_revision,
+                token=args.token,
+                trust_remote_code=args.trust_remote_code,
+                ignore_mismatched_sizes=args.ignore_mismatched_sizes,
+            )
+        model.save_pretrained(model_path, safe_serialization=False)
+    else:
+        
+        if ('roberta' in args.model_name_or_path.lower()):
+            model = RobertaForSequenceClassification.from_pretrained(model_path)    
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(model_path)
+
+
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
    
     non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
     print(f"Non label column names",non_label_column_names)
@@ -550,7 +587,7 @@ def main():
         # Otherwise, `DataCollatorWithPadding` will apply dynamic padding for us (by padding to the maximum length of
         # the samples passed). When using mixed precision, we add `pad_to_multiple_of=8` to pad all tensors to multiple
         # of 8s, which will enable the use of Tensor Cores on NVIDIA hardware with compute capability >= 7.5 (Volta).
-        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if accelerator.use_fp16 else None))
+        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=( 8 if accelerator.state.mixed_precision == "fp16" else None ))
 
     train_dataloader = DataLoader(
         train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
@@ -679,6 +716,9 @@ def main():
     progress_bar.update(completed_steps)
     
     global_results = {}
+
+    best_model = copy.deepcopy(model).cpu()
+    best_metric = -1
     for epoch in range(starting_epoch, args.num_train_epochs):
         model.train()
         if args.with_tracking:
@@ -735,32 +775,13 @@ def main():
         eval_metric = metric.compute()        
         logger.info(f"[{args.model_name_or_path}][{args.task_name}][EVAL] epoch {epoch}: {eval_metric}")
         global_results[str(epoch)] = eval_metric
-        if args.with_tracking:
-            accelerator.log(
-                {
-                    "accuracy" if args.task_name is not None else "glue": eval_metric,
-                    "train_loss": total_loss.item() / len(train_dataloader),
-                    "epoch": epoch,
-                    "step": completed_steps,
-                },
-                step=completed_steps,
-            )
+        
+        metric_value = list(eval_metric.values())[0]
+        if( metric_value > best_metric ):
 
-        if args.push_to_hub and epoch < args.num_train_epochs - 1:
-            accelerator.wait_for_everyone()
-            unwrapped_model = accelerator.unwrap_model(model)
-            unwrapped_model.save_pretrained(
-                args.output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
-            )
-            if accelerator.is_main_process:
-                tokenizer.save_pretrained(args.output_dir)
-                api.upload_folder(
-                    commit_message=f"Training in progress epoch {epoch}",
-                    folder_path=args.output_dir,
-                    repo_id=repo_id,
-                    repo_type="model",
-                    token=args.hub_token,
-                )
+            logger.info(f"!new best")
+            best_metric = metric_value
+            best_model = copy.deepcopy(model).cpu()
 
         if args.checkpointing_steps == "epoch":
             output_dir = f"epoch_{epoch}"
@@ -777,25 +798,12 @@ def main():
             print(f"Directory '{directory}' created successfully.")
         else:
             print(f"Directory '{directory}' already exists.")
-    #baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}"
-    #create_directory_if_not_exists(baseline_model_dir)
-    #torch.save(model.state_dict(),f"{baseline_model_dir}/baseline_model.pth")
-    if args.output_dir is not None:
-        accelerator.wait_for_everyone()
-        unwrapped_model = accelerator.unwrap_model(model)
-        unwrapped_model.save_pretrained(
-            args.output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
-        )
-        if accelerator.is_main_process:
-            tokenizer.save_pretrained(args.output_dir)
-            if args.push_to_hub:
-                api.upload_folder(
-                    commit_message="End of training",
-                    folder_path=args.output_dir,
-                    repo_id=repo_id,
-                    repo_type="model",
-                    token=args.hub_token,
-                )
+    
+    baseline_model_dir = f"./saves/models/finetuned/{args.model_name_or_path}/{args.task_name}"
+    create_directory_if_not_exists(baseline_model_dir)
+    if(str(args.seed)=="41"):
+        torch.save(best_model.state_dict(),f"{baseline_model_dir}/finetuned_model.pth")
+
 
     if args.task_name == "mnli":
         # Final evaluation on mismatched validation set

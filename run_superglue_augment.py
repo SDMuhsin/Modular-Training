@@ -49,10 +49,12 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank 
 from low_rank_modules.modeling_roberta import RobertaForSequenceClassification, RobertaOutputLowRank, RobertaIntermediateLowRank, RobertaFFNLowRank, RobertaAttentionLowRank
-
+from transformers import RobertaTokenizer, RobertaForMaskedLM
+from datasets import load_from_disk
 from torch.nn import KLDivLoss
 from torch.nn.functional import softmax, log_softmax, kl_div
 
+from src.utils.augment import augment_sentence, augment_dataset
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.42.0.dev0")
 
@@ -408,6 +410,38 @@ def main():
             # Load the dataset from the specified directory
             raw_datasets = datasets.load_from_disk(dataset_path)
             print("Loaded dataset from disk")
+    
+    '''
+        
+        Data Augmentation, glove based
+    
+    '''
+    aug_count = 5;
+    aug_dataset_path = os.path.join(save_dir,f"{args.task_name}_augdby_{aug_count}")
+    
+    #raw_datasets["train"] = raw_datasets["train"].select(range(0,3)) # For debugging
+    if not os.path.exists(aug_dataset_path):
+
+        #from transformers import BertTokenizer, BertForMaskedLM
+
+        tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
+        model = RobertaForMaskedLM.from_pretrained("roberta-base")
+        #tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        #model = BertForMaskedLM.from_pretrained("bert-base-uncased")
+
+        raw_datasets = augment_dataset(
+            raw_datasets=raw_datasets,
+            task_name=args.task_name,
+            task_to_keys=task_to_keys,
+            aug_count=aug_count,  # Number of augmented examples per entry
+            glove_file='./glove-embeddings/glove.6B.100d.txt',
+            model=model,
+            tokenizer=tokenizer
+        )
+        raw_datasets.save_to_disk(aug_dataset_path)
+    else:
+        raw_datasets = datasets.load_from_disk(aug_dataset_path)
+        
 
     # Labels
     if args.task_name is not None:
@@ -490,15 +524,6 @@ def main():
     config.pad_token_id = tokenizer.pad_token_id
 
     
-    '''
-    teacher = AutoModelForSequenceClassification.from_pretrained(
-        teacher_name,
-        from_tf=bool(".ckpt" in args.model_name_or_path),
-        config=config2,
-        ignore_mismatched_sizes=args.ignore_mismatched_sizes,
-        trust_remote_code=args.trust_remote_code,
-    )
-    print(teacher) '''
     teacher = copy.deepcopy(model)
     baseline_model_dir = f"./saves/models/finetuned/{args.model_name_or_path}/{args.task_name}/finetuned_model.pth"
     teacher.load_state_dict(torch.load(baseline_model_dir))
@@ -666,7 +691,7 @@ def main():
         # Otherwise, `DataCollatorWithPadding` will apply dynamic padding for us (by padding to the maximum length of
         # the samples passed). When using mixed precision, we add `pad_to_multiple_of=8` to pad all tensors to multiple
         # of 8s, which will enable the use of Tensor Cores on NVIDIA hardware with compute capability >= 7.5 (Volta).
-        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=( 8 if accelerator.state.mixed_precision == "fp16" else None ))
+        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if accelerator.use_fp16 else None))
 
     train_dataloader = DataLoader(
         train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
@@ -784,7 +809,7 @@ def main():
         num_training_steps=args.max_train_steps,
     )
 
-    # Prepare everything with our `accelerator`.
+    # Prepare everything with our accelerator.
     model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
     )
@@ -800,6 +825,14 @@ def main():
     checkpointing_steps = args.checkpointing_steps
     if checkpointing_steps is not None and checkpointing_steps.isdigit():
         checkpointing_steps = int(checkpointing_steps)
+
+    # We need to initialize the trackers we use, and also store our configuration.
+    # The trackers initializes automatically on the main process.
+    if args.with_tracking:
+        experiment_config = vars(args)
+        # TensorBoard cannot log Enums, need the raw value
+        experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"].value
+        accelerator.init_trackers("glue_no_trainer", experiment_config)
 
     # Get the metric function
     if args.task_name not in ["rte","mrpc","stsb","cola"]:
@@ -909,8 +942,7 @@ def main():
             )
 
         eval_metric = metric.compute()
-        logger.info(f"[EVAL] epoch {epoch}: {eval_metric}")
-        
+        logger.info(f"[EVAL] epoch {epoch}: {eval_metric}")        
 
     if args.task_name == "mnli":
         # Final evaluation on mismatched validation set

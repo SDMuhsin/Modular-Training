@@ -498,10 +498,10 @@ def main():
         ignore_mismatched_sizes=args.ignore_mismatched_sizes,
         trust_remote_code=args.trust_remote_code,
     )
-    print(teacher) '''
+    print(teacher)'''
     teacher = copy.deepcopy(model)
-    baseline_model_dir = f"./saves/models/finetuned/{args.model_name_or_path}/{args.task_name}/finetuned_model.pth"
-    teacher.load_state_dict(torch.load(baseline_model_dir))
+    #baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}/baseline_model.pth"
+    #teacher.load_state_dict(torch.load(baseline_model_dir))
 
     
     # Preprocessing the datasets
@@ -863,8 +863,8 @@ def main():
             )          
 
             # Combine the original loss and the distillation loss
-            alpha = 0.3  # Weighting factor for distillation loss, needs tuning
-            loss = (1 - alpha) * loss + alpha * dist_loss * (temperature ** 2)
+            alpha = 0.5  # Weighting factor for distillation loss, needs tuning
+            #loss = (1 - alpha) * loss + alpha * dist_loss * (temperature ** 2)
                         
             # We keep track of the loss at each epoch
             if args.with_tracking:
