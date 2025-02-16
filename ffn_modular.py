@@ -318,12 +318,12 @@ def main():
         new_ffn_layer.intermediate = intermediate_low_rank
         new_ffn_layer.output  = output_low_rank
         
-        ''' 
+         
         copy_ffn_weights_svd(
             old_ffn=original_ffn_layer,
             new_ffn=new_ffn_layer#,
          #   compression=args.compression
-        )'''
+        )
 
     else:
         original_ffn_layer = model.distilbert.transformer.layer[encoder_idx].ffn

@@ -691,7 +691,7 @@ def main():
         # Otherwise, `DataCollatorWithPadding` will apply dynamic padding for us (by padding to the maximum length of
         # the samples passed). When using mixed precision, we add `pad_to_multiple_of=8` to pad all tensors to multiple
         # of 8s, which will enable the use of Tensor Cores on NVIDIA hardware with compute capability >= 7.5 (Volta).
-        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if accelerator.use_fp16 else None))
+        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=( 8 if accelerator.state.mixed_precision == "fp16" else None ))
 
     train_dataloader = DataLoader(
         train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
@@ -867,42 +867,59 @@ def main():
         teacher
     )
     teacher.eval()
+    DISTILL_HS = True  # Toggle hidden state distillation
+    DISTILL_ATTN = True  # Toggle attention distillation
 
     for epoch in range(starting_epoch, args.num_train_epochs):
-
         model.train()
         if args.with_tracking:
             total_loss = 0
+        
         if args.resume_from_checkpoint and epoch == starting_epoch and resume_step is not None:
             active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
         else:
             active_dataloader = train_dataloader
 
         for step, batch in enumerate(active_dataloader):
-            
-            outputs = model(**batch)
+            outputs = model(**batch, output_hidden_states=DISTILL_HS, output_attentions=DISTILL_ATTN)
             loss = outputs.loss
-                
+            
             with torch.no_grad():
-                teacher_outputs = teacher(**batch)
-                teacher_logits = teacher_outputs.logits
-
+                teacher_outputs = teacher(**batch, output_hidden_states=DISTILL_HS, output_attentions=DISTILL_ATTN)
+            
             student_logits = outputs.logits
-     
-            # Calculate distillation loss
-            dist_loss = distillation_loss_fn(
-               log_softmax(student_logits / temperature, dim=-1),
-                softmax(teacher_logits / temperature, dim=-1)
-            )          
+            teacher_logits = teacher_outputs.logits
 
-            # Combine the original loss and the distillation loss
-            alpha = 0.3  # Weighting factor for distillation loss, needs tuning
-            loss = (1 - alpha) * loss + alpha * dist_loss * (temperature ** 2)
-                        
-            # We keep track of the loss at each epoch
+            # Logits distillation loss
+            dist_loss = distillation_loss_fn(
+                log_softmax(student_logits / temperature, dim=-1),
+                softmax(teacher_logits / temperature, dim=-1)
+            )
+
+            # Hidden state distillation loss
+            if DISTILL_HS:
+                hs_loss = 0
+                for s_hs, t_hs in zip(outputs.hidden_states, teacher_outputs.hidden_states):
+                    hs_loss += torch.nn.functional.mse_loss(s_hs, t_hs)
+            else:
+                hs_loss = 0
+            
+            # Attention distillation loss
+            if DISTILL_ATTN:
+                attn_loss = 0
+                for s_attn, t_attn in zip(outputs.attentions, teacher_outputs.attentions):
+                    attn_loss += torch.nn.functional.mse_loss(s_attn, t_attn)
+            else:
+                attn_loss = 0
+            
+            # Combine all losses
+            alpha, beta, gamma = 0.2, 0.1, 0.1  # Adjust weighting factors as needed
+            loss = (1 - alpha - beta - gamma) * loss + alpha * dist_loss * (temperature ** 2) + beta * hs_loss + gamma * attn_loss
+            
+            # Track loss
             if args.with_tracking:
                 total_loss += loss.detach().float()
-
+            
             loss = loss / args.gradient_accumulation_steps
             accelerator.backward(loss)
             if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
@@ -911,14 +928,11 @@ def main():
                 optimizer.zero_grad()
                 progress_bar.update(1)
                 completed_steps += 1
-
-            if isinstance(checkpointing_steps, int):
-                if completed_steps % checkpointing_steps == 0:
-                    output_dir = f"step_{completed_steps}"
-                    if args.output_dir is not None:
-                        output_dir = os.path.join(args.output_dir, output_dir)
-                    accelerator.save_state(output_dir)
-
+            
+            if isinstance(checkpointing_steps, int) and completed_steps % checkpointing_steps == 0:
+                output_dir = f"step_{completed_steps}" if args.output_dir is None else os.path.join(args.output_dir, output_dir)
+                accelerator.save_state(output_dir)
+            
             if completed_steps >= args.max_train_steps:
                 break
 
