@@ -501,7 +501,8 @@ def main():
     print(teacher) '''
     teacher = copy.deepcopy(model)
     baseline_model_dir = f"./saves/models/finetuned/{args.model_name_or_path}/{args.task_name}/finetuned_model.pth"
-    teacher.load_state_dict(torch.load(baseline_model_dir))
+    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    teacher.load_state_dict(torch.load(baseline_model_dir , map_location = device ) )
 
     
     # Preprocessing the datasets
@@ -689,7 +690,7 @@ def main():
 
                 module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
                 mha = RobertaAttentionLowRank(config,compression=int(args.encoder_compression))
-                mha.load_state_dict(torch.load(module_path))
+                mha.load_state_dict(torch.load(module_path,map_location = device  )    )
 
                 my_model.roberta.encoder.layer[i].attention = mha
 
@@ -717,7 +718,7 @@ def main():
                 output_lr = RobertaOutputLowRank(config,int(args.encoder_compression))
                 ffn = RobertaFFNLowRank(intermediate_lr,output_lr);
 
-                ffn.load_state_dict(torch.load(module_path))
+                ffn.load_state_dict(torch.load(module_path ,map_location=device ))
                 my_model.roberta.encoder.layer[i].intermediate = ffn.intermediate
                 my_model.roberta.encoder.layer[i].output = ffn.output
                 my_model.roberta.encoder.layer[i].ffn = ffn

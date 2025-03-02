@@ -76,6 +76,7 @@ then
 
 	echo "\n \n \n Run glue for job $job_name"
 	echo "Modularity : $modularity"
+	
 
 	python3 run_superglue.py \
 	  --model_name_or_path $model_name \
