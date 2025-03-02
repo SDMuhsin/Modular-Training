@@ -277,10 +277,17 @@ def copy_attn_weights_svd(
         # Copy bias to the 'expand' layer
         new_attn.output.dense_expand.bias.copy_(old_out_b)
 
+
+def create_directory_if_not_exists(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+        print(f"Directory '{directory}' created successfully.")
 def main():
 
     set_seed(42)
     save_dir = "./downloads"
+
+
 
     # Check if data is saved for cluster
     model_name_short = args.model_name.split("/")[-1]
@@ -295,6 +302,15 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.environ['PYTHONHASHSEED'] = str(args.random_seed)
+    
+    # Skip entire program
+    num_epochs = int(args.epochs)
+    encoder_idx = int(args.encoder_idx)
+    op_save_dir = f"./saves/{args.model_name}/{args.job_name}/model"
+    create_directory_if_not_exists(op_save_dir) 
+    if os.path.exists(f"{op_save_dir}/mha_enc{encoder_idx}_epoch{num_epochs}.pth"):
+        print("MHA Module already exists, skipping")
+        exit()
 
     if not os.path.exists(tokenizer_path):
         tokenizer = AutoTokenizer.from_pretrained(
@@ -352,7 +368,6 @@ def main():
         else:
             model = AutoModelForSequenceClassification.from_pretrained(model_path)
 
-    encoder_idx = int(args.encoder_idx)
     print(f"Encoder idx = {encoder_idx}")
 
     # attention_layer = model.bert.encoder.layer[0].attention.self
@@ -381,7 +396,6 @@ def main():
     # Define an optimizer
     optimizer = optim.Adam(attention_layer.parameters(), lr=1e-4)
     # Number of epochs
-    num_epochs = int(args.epochs)
 
     # Training mode
     device = torch.device("cuda:0")
@@ -401,10 +415,7 @@ def main():
     
         return noisy_tensor
     
-    def create_directory_if_not_exists(directory):
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-            print(f"Directory '{directory}' created successfully.")
+
 
     def dropout_tensor(input_tensor, percentage):
         """
@@ -540,10 +551,8 @@ def main():
         print(f"[MHA]Epoch {epoch+1}, Loss: {total_loss} = {normal_loss} (normal) + {augment_loss} (augmented)  \r")
         p+=pStep
     print("EC ",ec)
-    save_dir = f"./saves/{args.model_name}/{args.job_name}/model"
-    create_directory_if_not_exists(save_dir) 
-    torch.save(attention_layer.state_dict(),f"{save_dir}/mha_enc{encoder_idx}_epoch{num_epochs}.pth")
 
+    torch.save(attention_layer.state_dict(),f"{op_save_dir}/mha_enc{encoder_idx}_epoch{num_epochs}.pth")
     print("Training complete.")    
     
 if __name__ == "__main__":

@@ -226,7 +226,10 @@ def copy_ffn_weights_svd(
 
         new_ln.weight[:ln_w_size] = old_ln.weight[:ln_w_size]
         new_ln.bias[:ln_b_size]   = old_ln.bias[:ln_b_size]
-
+def create_directory_if_not_exists(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+        print(f"Directory '{directory}' created successfully.")
 def main():
     
     set_seed(42)
@@ -245,7 +248,20 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     os.environ['PYTHONHASHSEED'] = str(args.random_seed)
-   
+
+    # Skip
+
+    num_epochs = int(args.epochs)
+    encoder_idx = int(args.encoder_idx)
+
+    op_save_dir = f"./saves/{args.model_name}/{args.job_name}/model"
+    create_directory_if_not_exists(op_save_dir)
+    
+    if os.path.exists(f"{op_save_dir}/ffn_enc{encoder_idx}_epoch{num_epochs}.pth"):
+        print(f"FFN exists, SKIP")
+        exit()
+
+
     if not os.path.exists(tokenizer_path):
         tokenizer = AutoTokenizer.from_pretrained(
             args.model_name,
@@ -304,7 +320,6 @@ def main():
 
 
 
-    encoder_idx = int(args.encoder_idx)
     print(f"Encoder idx = {encoder_idx}")
     compression = int(args.compression)
     print(f"Compression = {compression}")
@@ -334,7 +349,6 @@ def main():
     output_save_folder = f"./saves/{args.model_name}/{args.task}/ffn/outputs/encoder_{encoder_idx}/"
 
     optimizer = optim.Adam(new_ffn_layer.parameters(), lr=1e-4)
-    num_epochs = int(args.epochs)
 
     device = torch.device("cuda:1")
     original_ffn_layer = original_ffn_layer.to(device)
@@ -353,10 +367,7 @@ def main():
     
         return noisy_tensor
     
-    def create_directory_if_not_exists(directory):
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-            print(f"Directory '{directory}' created successfully.")
+
     
     def dropout_tensor(input_tensor, percentage):
         """
@@ -480,9 +491,8 @@ def main():
 
         print(f"[FFN] Epoch {epoch+1}, Loss: {total_loss} = {normal_loss} (normal) + {augment_loss} (augmented)  \r")
         p += pStep
-    save_dir = f"./saves/{args.model_name}/{args.job_name}/model"
-    create_directory_if_not_exists(save_dir) 
-    torch.save(new_ffn_layer.state_dict(),f"{save_dir}/ffn_enc{encoder_idx}_epoch{num_epochs}.pth")
+
+    torch.save(new_ffn_layer.state_dict(),f"{op_save_dir}/ffn_enc{encoder_idx}_epoch{num_epochs}.pth")
 
     print("Training complete.")    
     
