@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the array of TASK_NAMES
-TASK_NAMES=( "copa" "cb" "wic" "wsc" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
+TASK_NAMES=( "copa" "cb" "wic" "wsc" "mrpc" "rte" "stsb" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
 
 # Define the array of MODEL_TYPES
 MODEL_TYPES=("roberta-base")
@@ -29,7 +29,7 @@ do
       --random_seed ${SEED} \
       --last_mod_trained_for 200 \
       --encoder_compression 2 \
-      --job_name 'TESTCOPA' \
+      --job_name 'modroberta-{}-m200Aug3xMult1x' \
       --seed ${SEED}" ::: "${TASK_NAMES[@]}"
   done
 done
