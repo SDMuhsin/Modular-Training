@@ -396,11 +396,8 @@ def main():
                 args.model_name_or_path,
                 from_tf=bool(".ckpt" in args.model_name_or_path),
                 config=config,
-                cache_dir=args.cache_dir,
-                revision=args.model_revision,
-                token=args.token,
-                trust_remote_code=args.trust_remote_code,
-                ignore_mismatched_sizes=args.ignore_mismatched_sizes,
+                trust_remote_code=True,
+                ignore_mismatched_sizes=True,
             )
         model.save_pretrained(model_path, safe_serialization=False)
     else:
@@ -449,11 +446,14 @@ def main():
             )
             label_to_id = {i: label_name_to_id[label_list[i]] for i in range(num_labels)}
         else:
-            logger.warning(
+            pass
+
+            '''logger.warning(
                 "Your model seems to have been trained with labels, but they don't match the dataset: ",
                 f"model labels: {sorted(label_name_to_id.keys())}, dataset labels: {sorted(label_list)}."
                 "\nIgnoring the model labels as a result.",
             )
+            '''
     elif args.task_name is None and not is_regression:
         label_to_id = {v: i for i, v in enumerate(label_list)}
 

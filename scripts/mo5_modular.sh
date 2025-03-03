@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # Define the array of TASK_NAMES
-TASK_NAMES=( "stsb" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
+TASK_NAMES=( "copa" "cb" "wic" "wsc" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
 
 # Define the array of MODEL_TYPES
-MODEL_TYPES=("distilbert/distilbert-base-uncased")
+MODEL_TYPES=("roberta-base")
 
 # Define the array of SEEDS
 SEEDS=(41 42 43 44 45)
@@ -19,7 +19,7 @@ do
   for SEED in "${SEEDS[@]}"
   do
     # Use GNU Parallel to run tasks directly for each combination of model and seed
-    parallel -j 1 "python3 run_superglue_moded.py \
+    parallel -j 1 "python3 run_superglue_mo5.py \
       --model_name_or_path ${MODEL_TYPE} \
       --task_name {} \
       --per_device_train_batch_size 32 \
@@ -27,7 +27,9 @@ do
       --num_train_epochs 18 \
       --output_dir ./tmp/{}_{}_{} \
       --random_seed ${SEED} \
-      --job_name 'fn-{}m200aug3x'\
+      --last_mod_trained_for 200 \
+      --encoder_compression 2 \
+      --job_name 'TESTCOPA' \
       --seed ${SEED}" ::: "${TASK_NAMES[@]}"
   done
 done

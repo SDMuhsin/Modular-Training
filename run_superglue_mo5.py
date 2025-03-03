@@ -50,6 +50,9 @@ from transformers.utils.versions import require_version
 from evaluate import load
 from low_rank_modules.distilbert import FFNLowRank,MultiHeadSelfAttentionLowRank 
 from low_rank_modules.modeling_roberta import RobertaForSequenceClassification  
+from low_rank_modules.modeling_roberta import RobertaForSequenceClassification, RobertaOutputLowRank, RobertaIntermediateLowRank, RobertaFFNLowRank, RobertaAttentionLowRank
+
+
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.42.0.dev0")
 
@@ -218,6 +221,15 @@ def parse_args():
         "--job_name",
         type=str
     )
+    parser.add_argument(
+        "--last_mod_trained_for",
+        type=int
+    )
+
+    parser.add_argument(
+        "--encoder_compression",
+        type=int
+    )
     args = parser.parse_args()
 
     # Sanity checks
@@ -239,13 +251,14 @@ def parse_args():
 save_dir = "./downloads"
 
 def main():
+
     args = parse_args()
 
-	model_name_short = model_args.model_name_or_path.split("/")[-1]
-    config_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_config")
-    tokenizer_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_tokenizer")
-    model_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_model")
-    metric_path = os.path.join(save_dir, f"{data_args.task_name}_{model_name_short}_metric.pkl")
+    model_name_short = args.model_name_or_path.split("/")[-1]
+    config_path = os.path.join(save_dir, f"{args.task_name}_{model_name_short}_config")
+    tokenizer_path = os.path.join(save_dir, f"{args.task_name}_{model_name_short}_tokenizer")
+    model_path = os.path.join(save_dir, f"{args.task_name}_{model_name_short}_model")
+    metric_path = os.path.join(save_dir, f"{args.task_name}_{model_name_short}_metric.pkl")
 
     random.seed(args.random_seed)
     np.random.seed(args.random_seed)
@@ -356,14 +369,9 @@ def main():
     print(set(raw_datasets['validation']['label']))
     print(set(raw_datasets['test']['label']))
 
-    # Load or save tokenizer
     if not os.path.exists(tokenizer_path):
         tokenizer = AutoTokenizer.from_pretrained(
             args.model_name_or_path,
-            #cache_dir=args.cache_dir,
-            #use_fast=args.use_fast_tokenizer,
-            #revision=args.model_revision,
-            #token=args.token,
             trust_remote_code=args.trust_remote_code,
         )
         tokenizer.save_pretrained(tokenizer_path)
@@ -376,9 +384,6 @@ def main():
             args.model_name_or_path,
             num_labels=num_labels,
             finetuning_task=args.task_name,
-            #cache_dir=args.cache_dir,
-            #revision=args.model_revision,
-            #token=args.token,
             trust_remote_code=args.trust_remote_code,
         )
         config.save_pretrained(config_path)
@@ -410,39 +415,82 @@ def main():
                 trust_remote_code=args.trust_remote_code,
                 ignore_mismatched_sizes=args.ignore_mismatched_sizes,
             )
-        model.save_pretrained(model_path)
+        model.save_pretrained(model_path, safe_serialization=False)
     else:
         
         if ('roberta' in args.model_name_or_path.lower()):
             model = RobertaForSequenceClassification.from_pretrained(model_path)    
         else:
             model = AutoModelForSequenceClassification.from_pretrained(model_path)
-   
+
+
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    config.pad_token_id = tokenizer.pad_token_id
+  
     non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
     print(f"Non label column names",non_label_column_names)
 
     
-     
-    my_model = copy.deepcopy(model)
-    
-    module_trained_for = 200
-    
-    #args.job_name = "cbAblation"
-    for i in range(6):
-        
-        module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
-        mha = MultiHeadSelfAttentionLowRank(config,compression=2)
+    device = torch.device("cuda") 
+    ''' @@@@@@@@@@@@@@@@@@@ PLUG IN MODULES @@@@@@@@@@@@@@@@@@@@@@@@ '''
 
-        mha.load_state_dict(torch.load(module_path))
-        my_model.distilbert.transformer.layer[i].attention = mha
-        
-        
-        module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
-        ffn = FFNLowRank(config,compression=2)
-        ffn.load_state_dict(torch.load(module_path))
-        my_model.distilbert.transformer.layer[i].ffn = ffn
+    my_model = copy.deepcopy(model)
+    module_trained_for = args.last_mod_trained_for
     
-    model = my_model 
+    num_layers = 12 if "roberta" in args.model_name_or_path.lower() else 6
+    for i in range(num_layers):
+        
+
+        if("roberta" in args.model_name_or_path.lower()):
+
+            module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
+            mha = RobertaAttentionLowRank(config,compression=int(args.encoder_compression))
+            mha.load_state_dict(torch.load(module_path,map_location = device  )    )
+
+            my_model.roberta.encoder.layer[i].attention = mha
+
+        else:
+            
+            module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/mha_enc{i}_epoch{module_trained_for}.pth"
+            mha = MultiHeadSelfAttentionLowRank(config,compression=int(args.encoder_compression))
+
+            mha_1 = copy.deepcopy(mha)
+
+            mha.load_state_dict(torch.load(module_path))
+            my_model.distilbert.transformer.layer[i].attention = mha
+            
+
+       
+        if("roberta" in args.model_name_or_path.lower()):
+            
+            module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
+
+            intermediate_lr = RobertaIntermediateLowRank(config,int(args.encoder_compression))
+            output_lr = RobertaOutputLowRank(config,int(args.encoder_compression))
+            ffn = RobertaFFNLowRank(intermediate_lr,output_lr);
+
+            ffn.load_state_dict(torch.load(module_path ,map_location=device ))
+            my_model.roberta.encoder.layer[i].intermediate = ffn.intermediate
+            my_model.roberta.encoder.layer[i].output = ffn.output
+            my_model.roberta.encoder.layer[i].ffn = ffn
+
+
+        else:
+
+            module_path = f"./saves/{args.model_name_or_path}/{args.job_name}/model/ffn_enc{i}_epoch{module_trained_for}.pth"
+            ffn = FFNLowRank(config,compression=int(args.encoder_compression))
+
+            ffn_1 = copy.deepcopy(ffn)
+
+            ffn.load_state_dict(torch.load(module_path))
+            my_model.distilbert.transformer.layer[i].ffn = ffn
+            
+
+    model = my_model
+
+    ''' @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ ''' 
+
     
 
     # Preprocessing the datasets
@@ -613,7 +661,7 @@ def main():
         # Otherwise, `DataCollatorWithPadding` will apply dynamic padding for us (by padding to the maximum length of
         # the samples passed). When using mixed precision, we add `pad_to_multiple_of=8` to pad all tensors to multiple
         # of 8s, which will enable the use of Tensor Cores on NVIDIA hardware with compute capability >= 7.5 (Volta).
-        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if accelerator.use_fp16 else None))
+        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=( 8 if accelerator.state.mixed_precision == "fp16" else None ))
 
     train_dataloader = DataLoader(
         train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
@@ -809,21 +857,7 @@ def main():
                 step=completed_steps,
             )
 
-        if args.push_to_hub and epoch < args.num_train_epochs - 1:
-            accelerator.wait_for_everyone()
-            unwrapped_model = accelerator.unwrap_model(model)
-            unwrapped_model.save_pretrained(
-                args.output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
-            )
-            if accelerator.is_main_process:
-                tokenizer.save_pretrained(args.output_dir)
-                api.upload_folder(
-                    commit_message=f"Training in progress epoch {epoch}",
-                    folder_path=args.output_dir,
-                    repo_id=repo_id,
-                    repo_type="model",
-                    token=args.hub_token,
-                )
+
 
         if args.checkpointing_steps == "epoch":
             output_dir = f"epoch_{epoch}"
@@ -843,23 +877,6 @@ def main():
     #baseline_model_dir = f"./saves/models/baseline/{args.model_name_or_path}/{args.task_name}"
     #create_directory_if_not_exists(baseline_model_dir)
     #torch.save(model.state_dict(),f"{baseline_model_dir}/baseline_model.pth")
-    if args.output_dir is not None:
-        accelerator.wait_for_everyone()
-        unwrapped_model = accelerator.unwrap_model(model)
-        unwrapped_model.save_pretrained(
-            args.output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
-        )
-        if accelerator.is_main_process:
-            tokenizer.save_pretrained(args.output_dir)
-            if args.push_to_hub:
-                api.upload_folder(
-                    commit_message="End of training",
-                    folder_path=args.output_dir,
-                    repo_id=repo_id,
-                    repo_type="model",
-                    token=args.hub_token,
-                )
-
     if args.task_name == "mnli":
         # Final evaluation on mismatched validation set
         eval_dataset = processed_datasets["validation_mismatched"]
