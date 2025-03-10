@@ -18,7 +18,7 @@ model_name="distilbert-base-uncased"
 #./dp_sa_pipeline.sh test 1 n y y y 2 y
 
 
-encoder_idx=9
+encoder_idx=7
 random_seed=42
 #rm ./saves/"${task}_${aug_n}_${job_name}_augmented_dataset.pkl"
 while [ $encoder_idx -le 11 ]
