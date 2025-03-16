@@ -2,7 +2,7 @@ from tabulate import tabulate
 import json 
 
 # Loop through datasets
-tasks = ["boolq","cb","rte","wic","wsc","stsb","mrpc"] #+ ["copa","rte","mrpc","stsb"]
+tasks = ["cb","rte","wic","wsc","stsb","mrpc"] #+ ["copa","rte","mrpc","stsb"]
 seeds = [41,42,43,44,45]
 models = ["roberta-base"]#["bert-base-uncased", "google/mobilebert-uncased", "distilbert-base-uncased", "moddistilbert-base-uncased", "albert-base-v2","t5-small","squeezebert/squeezebert-uncased","microsoft/deberta-v3-xsmall" ]
 # , "huawei-noah/TinyBERT_General_6L_768D"
