@@ -327,23 +327,22 @@ def main():
     
     ''' CHANGE THESE LINES '''
     if args.task_name is not None:
-        # Downloading and loading a dataset from the hub.
-        if (args.task_name in ["rte","stsb","mrpc","cola"]):
-            raw_datasets = load_dataset("glue", args.task_name)
+        dataset_path = os.path.join(save_dir, f"{args.task_name}")
 
+        if not os.path.exists(dataset_path):
+            # Downloading and loading a dataset from the hub.
+            if args.task_name in ["rte","stsb","mrpc","cola"]:
+                raw_datasets = load_dataset("glue", args.task_name)
+            else:
+                raw_datasets = load_dataset("aps/super_glue", args.task_name)
+
+            # Save the dataset to the specified directory
+            raw_datasets.save_to_disk(dataset_path)
+            print("Saved dataset to disk")
         else:
-            raw_datasets = load_dataset("aps/super_glue", args.task_name)
-
-    else:
-        # Loading the dataset from local csv or json file.
-        data_files = {}
-        if args.train_file is not None:
-            data_files["train"] = args.train_file
-        if args.validation_file is not None:
-            data_files["validation"] = args.validation_file
-        extension = (args.train_file if args.train_file is not None else args.validation_file).split(".")[-1]
-        raw_datasets = load_dataset(extension, data_files=data_files)
-
+            # Load the dataset from the specified directory
+            raw_datasets = datasets.load_from_disk(dataset_path)
+            print("Loaded dataset from disk")
     # Labels
     if args.task_name is not None:
         is_regression = args.task_name == "stsb"
@@ -485,7 +484,8 @@ def main():
 
             ffn.load_state_dict(torch.load(module_path))
             my_model.distilbert.transformer.layer[i].ffn = ffn
-            
+    
+    exit()
 
     model = my_model
 

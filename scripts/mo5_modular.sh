@@ -4,7 +4,7 @@
 TASK_NAMES=( "copa" "cb" "wic" "wsc" "mrpc" "rte" "stsb" ) #( "boolq" "cb" "wic" "wsc" ) #( "copa" "wsc" "wic" "cb" "boolq" "cola" "stsb" "rte" "mrpc" )
 
 # Define the array of MODEL_TYPES
-MODEL_TYPES=("roberta-base")
+MODEL_TYPES=("roberta-base" "distilbert-base-uncased")
 
 # Define the array of SEEDS
 SEEDS=(41 42 43 44 45)

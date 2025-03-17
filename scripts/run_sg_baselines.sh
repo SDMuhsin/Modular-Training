@@ -4,10 +4,10 @@
 TASK_NAMES=("copa" "wsc" "wic" "cb" "boolq" "stsb" "rte" "mrpc")
 
 # Define the array of MODEL_TYPES
-MODEL_TYPES=( "roberta-base" )  #("bert-base-uncased" "huawei-noah/TinyBERT_General_6L_768D" "google/mobilebert-uncased" "distilbert-base-uncased")
+MODEL_TYPES=( "roberta-base" "distilbert-base-uncased")  #("bert-base-uncased" "huawei-noah/TinyBERT_General_6L_768D" "google/mobilebert-uncased" "distilbert-base-uncased")
 
 # Define the array of SEEDS
-SEEDS=(41 42 43 44 45)
+SEEDS=(41)
 
 # Loop over each model
 for MODEL_TYPE in "${MODEL_TYPES[@]}"
