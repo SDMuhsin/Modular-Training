@@ -14,7 +14,7 @@ do_plug_mods=$8
 aug_n=$9
 task=${10}
 multiplier=${11:-1}
-model_name="roberta-base-uncased" 
+model_name="roberta-base" 
 #./dp_sa_pipeline.sh test 1 n y y y 2 y
 
 
