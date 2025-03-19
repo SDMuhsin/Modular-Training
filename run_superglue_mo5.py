@@ -485,7 +485,6 @@ def main():
             ffn.load_state_dict(torch.load(module_path))
             my_model.distilbert.transformer.layer[i].ffn = ffn
     
-    exit()
 
     model = my_model
 
