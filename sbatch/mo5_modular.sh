@@ -18,6 +18,6 @@ which python3
 
 export PYTHONPATH="$PYTHONPATH:$(pwd)"
 
-./scripts/mo5_modular.sh
+./scripts/run_sg_baselines.sh
 
 echo "Run complete"
